@@ -12,10 +12,20 @@ function serveDevicesJson(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.url !== '/devices.json') return next();
-        // Only serve tokens to loopback connections (check actual remote IP, not spoofable Host header)
+        // Only serve tokens to loopback or local private-range connections.
+        // Private ranges are included to support Docker Desktop for Mac, where
+        // the host connects via the VM bridge gateway (192.168.65.x / 172.x.x.x)
+        // rather than 127.0.0.1. The guard still blocks public internet addresses.
         const remoteAddr = req.socket.remoteAddress || '';
         const isLoopback = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
-        if (!isLoopback) {
+        // Also allow Docker Desktop VM bridge addresses. Docker Desktop for Mac
+        // routes host→container traffic through its internal VM network and may
+        // present source IPs in 172.x.x.x / 192.168.x.x / 10.x.x.x ranges.
+        const isPrivate =
+          /^(::ffff:)?192\.168\./.test(remoteAddr) ||
+          /^(::ffff:)?172\./.test(remoteAddr) ||
+          /^(::ffff:)?10\./.test(remoteAddr);
+        if (!isLoopback && !isPrivate) {
           res.statusCode = 403;
           res.end('Forbidden: devices.json is only served to localhost');
           return;
@@ -54,9 +64,9 @@ export default defineConfig(({ command }) => ({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'WhatsAppInbox',
+      name: 'MessagingInbox',
       formats: ['es', 'umd'],
-      fileName: (format) => `whatsapp-inbox.${format}.js`,
+      fileName: (format) => `messaging-inbox.${format}.js`,
     },
     rollupOptions: {
       output: {

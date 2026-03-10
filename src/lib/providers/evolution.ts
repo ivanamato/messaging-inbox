@@ -1,5 +1,7 @@
 import type {
-  WhatsAppProvider,
+  MessagingProvider,
+  ProviderCapabilities,
+  DeleteMessageParams,
   Chat,
   Message,
   SendTextParams,
@@ -438,10 +440,15 @@ function extractContent(msg: EvolutionMessage): {
 
 // -- Provider implementation --
 
-export class EvolutionProvider implements WhatsAppProvider {
+export class EvolutionProvider implements MessagingProvider {
   readonly type = 'evolution' as const;
-  readonly supportsTemplates = false;
-  readonly has24HourWindow = false;
+  readonly capabilities: ProviderCapabilities = {
+    templates: false,
+    messagingWindow24h: false,
+    pushToTalk: true,
+    interactiveButtons: true,
+    deleteForEveryone: true,
+  };
 
   // Cache: @s.whatsapp.net JID -> @lid JID (built during findChats)
   private phoneLidMap = new Map<string, string>();
@@ -915,7 +922,9 @@ export class EvolutionProvider implements WhatsAppProvider {
     };
   }
 
-  async deleteMessage(instanceName: string, messageId: string, remoteJid: string, fromMe: boolean): Promise<void> {
+  async deleteMessage(instanceName: string, params: DeleteMessageParams): Promise<void> {
+    const { messageId, metadata = {} } = params;
+    const { remoteJid, fromMe } = metadata as { remoteJid?: string; fromMe?: boolean };
     await this.request(`/chat/deleteMessageForEveryone/${encodeURIComponent(instanceName)}`, {
       method: 'DELETE',
       body: JSON.stringify({ id: messageId, remoteJid, fromMe }),

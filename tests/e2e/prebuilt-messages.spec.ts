@@ -14,7 +14,10 @@ test.describe('Pre-built messages', () => {
   let chatList: ConversationListPage;
   let thread: MessageThreadPage;
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, request }) => {
+    await request.post('http://localhost:3002/test/reset/MOCK1', {
+      headers: { apikey: 'mock-token-123' },
+    });
     chatList = new ConversationListPage(page);
     thread = new MessageThreadPage(page);
     await page.goto('/');

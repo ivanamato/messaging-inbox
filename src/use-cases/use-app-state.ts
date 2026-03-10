@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type RefObject } from 'react';
 import { useDeviceContext } from '@/lib/provider-context';
 import type { Conversation } from './types';
+import type { ProviderType } from '@/lib/providers/types';
 
 /** Minimal ref interface — avoids importing from the component layer. */
 type ConversationListHandle = {
@@ -11,14 +12,15 @@ export function useAppState(conversationListRef: RefObject<ConversationListHandl
   const { selectedDevice, readonly: isReadonly, viewMode, devices, getProviderForDevice } = useDeviceContext();
   const [selectedConversation, setSelectedConversation] = useState<Conversation | undefined>();
 
-  // Clear conversation when device changes
+  // Clear conversation and refresh chat list when device changes
   const prevDeviceIdRef = useRef(selectedDevice?.id);
   useEffect(() => {
     if (selectedDevice && prevDeviceIdRef.current !== selectedDevice.id) {
       prevDeviceIdRef.current = selectedDevice.id;
       setSelectedConversation(undefined);
+      conversationListRef.current?.refresh();
     }
-  }, [selectedDevice]);
+  }, [selectedDevice, conversationListRef]);
 
   // Clear conversation and refresh chat list when view mode changes
   const prevViewModeRef = useRef(viewMode);
@@ -34,8 +36,10 @@ export function useAppState(conversationListRef: RefObject<ConversationListHandl
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedConversation) {
-        const hasDialog = document.querySelector('[data-radix-dialog-overlay]');
-        if (!hasDialog) setSelectedConversation(undefined);
+        const hasDialog =
+        document.querySelector('[data-radix-dialog-overlay]') ||
+        document.querySelector('[data-testid="prebuilt-messages-dialog"]');
+      if (!hasDialog) setSelectedConversation(undefined);
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -49,7 +53,7 @@ export function useAppState(conversationListRef: RefObject<ConversationListHandl
       : undefined;
 
   const instance = viewMode === 'all' ? chatDevice?.instanceName : selectedDevice?.instanceName;
-  const provider = ((viewMode === 'all' ? chatDevice?.providerType : selectedDevice?.providerType) ?? 'evolution') as 'evolution' | 'cloud';
+  const provider = ((viewMode === 'all' ? chatDevice?.providerType : selectedDevice?.providerType) ?? 'evolution') as ProviderType;
   const effectiveReadOnly = viewMode === 'all' ? (chatDevice?.readonly ?? false) : isReadonly;
   const providerOverride = viewMode === 'all' && chatDevice ? getProviderForDevice(chatDevice) : undefined;
 

@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useTranslations } from '@/lib/i18n';
 import { useMessageThread, getDisabledInputMessage } from '@/use-cases/use-message-thread';
-import type { Message, WhatsAppProvider, PrebuiltMessage } from '@/lib/providers/types';
+import type { Message, MessagingProvider, PrebuiltMessage } from '@/lib/providers/types';
 import { sanitizeUrl, sanitizeDisplayFilename } from '@/lib/url-utils';
 import { getAvatarInitials } from '@/lib/avatar-utils';
 
@@ -110,7 +110,7 @@ type Props = {
   instance?: string;
   provider?: string;
   readOnly?: boolean;
-  providerOverride?: WhatsAppProvider;
+  providerOverride?: MessagingProvider;
   prefillToken?: { id: number; message: string } | null;
   prebuiltMessages?: PrebuiltMessage[];
 };
@@ -168,7 +168,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, profileP
     send,
     handleTemplateSentInternal,
     handleRefresh,
-    isCloudProvider,
+    supportsTemplates,
     currentPageRef,
     recordingState,
     recordingDuration,
@@ -873,7 +873,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, profileP
       </div>
       )}
 
-      {isCloudProvider && (
+      {supportsTemplates && (
         <TemplateSelectorDialog
           open={showTemplateDialog}
           onOpenChange={setShowTemplateDialog}

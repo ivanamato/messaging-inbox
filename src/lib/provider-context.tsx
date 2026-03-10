@@ -1,30 +1,34 @@
 import { createContext, useContext, useMemo, useState, useCallback, type PropsWithChildren } from 'react';
 import { EvolutionProvider } from './providers/evolution';
-import type { WhatsAppProvider, ProviderType, DeviceConfig, WhatsAppMultiDeviceConfig, ViewMode } from './providers/types';
+import { GenericServerProvider } from './providers/generic-server';
+import type { MessagingProvider, ProviderType, ProviderCapabilities, DeviceConfig, WhatsAppMultiDeviceConfig, ViewMode } from './providers/types';
 import { TranslationsProvider } from './i18n';
 
 // --- Provider registry: one provider per unique device (keyed by device.id to avoid token exposure) ---
 
-function createProviderInstance(type: ProviderType, apiUrl: string, instanceToken: string): WhatsAppProvider {
+function createProviderInstance(type: ProviderType, apiUrl: string, instanceToken: string, capabilities?: Partial<ProviderCapabilities>): MessagingProvider {
   if (type === 'evolution') {
     return new EvolutionProvider(apiUrl, instanceToken);
+  }
+  if (type === 'generic-server') {
+    return new GenericServerProvider(apiUrl, instanceToken, capabilities);
   }
   throw new Error(`Unknown provider type: ${type}`);
 }
 
-function buildProviderRegistry(devices: DeviceConfig[]): Map<string, WhatsAppProvider> {
-  const registry = new Map<string, WhatsAppProvider>();
+function buildProviderRegistry(devices: DeviceConfig[]): Map<string, MessagingProvider> {
+  const registry = new Map<string, MessagingProvider>();
   for (const device of devices) {
     const type = device.providerType || 'evolution';
     const key = `${device.id}|${type}`;
     if (!registry.has(key)) {
-      registry.set(key, createProviderInstance(type, device.apiUrl, device.instanceToken));
+      registry.set(key, createProviderInstance(type, device.apiUrl, device.instanceToken, device.capabilities));
     }
   }
   return registry;
 }
 
-function getProviderForDevice(device: DeviceConfig, registry: Map<string, WhatsAppProvider>): WhatsAppProvider {
+function getProviderForDevice(device: DeviceConfig, registry: Map<string, MessagingProvider>): MessagingProvider {
   const type = device.providerType || 'evolution';
   const key = `${device.id}|${type}`;
   return registry.get(key)!;
@@ -36,14 +40,14 @@ export type DeviceContextValue = {
   devices: DeviceConfig[];
   selectedDevice: DeviceConfig | null;
   selectDevice: (deviceId: string) => void;
-  getProviderForDevice: (device: DeviceConfig) => WhatsAppProvider;
+  getProviderForDevice: (device: DeviceConfig) => MessagingProvider;
   readonly: boolean;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
 };
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
-const ProviderContext = createContext<WhatsAppProvider | null>(null);
+const ProviderContext = createContext<MessagingProvider | null>(null);
 
 export function ProviderProvider({ config, children }: PropsWithChildren<{ config: WhatsAppMultiDeviceConfig }>) {
   const { devices } = config;
@@ -98,7 +102,7 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
   );
 }
 
-export function useProvider(): WhatsAppProvider {
+export function useProvider(): MessagingProvider {
   const provider = useContext(ProviderContext);
   if (!provider) {
     throw new Error('useProvider must be used within a ProviderProvider');

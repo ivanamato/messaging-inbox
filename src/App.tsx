@@ -34,7 +34,7 @@ export function App({ conversationListRef: externalRef, chatActions, chatTags, c
   } = useAppState(conversationListRef);
 
   const handleDeviceChange = useCallback(
-    (_device: { instanceName: string; provider: 'evolution' | 'cloud' } | null) => {
+    (_device: { instanceName: string; provider: string } | null) => {
       // Device selection is managed by context; callback reserved for future use
     },
     [],

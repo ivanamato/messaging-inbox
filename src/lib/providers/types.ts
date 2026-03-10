@@ -1,6 +1,20 @@
 // Normalized types used across all providers
 
-export type ProviderType = 'evolution' | 'cloud';
+export type ProviderType = 'evolution' | 'generic-server';
+
+export type ProviderCapabilities = {
+  templates: boolean;
+  messagingWindow24h: boolean;
+  pushToTalk: boolean;
+  interactiveButtons: boolean;
+  deleteForEveryone: boolean;
+};
+
+export type DeleteMessageParams = {
+  messageId: string;
+  /** Provider-specific metadata (e.g. { remoteJid, fromMe } for Evolution). */
+  metadata?: Record<string, unknown>;
+};
 
 export type ViewMode = 'single' | 'all';
 
@@ -35,6 +49,8 @@ export type DeviceConfig = {
   readonly?: boolean;
   /** Optional list of pre-built messages available in the composer for this device */
   prebuiltMessages?: PrebuiltMessage[];
+  /** Declare which features the provider backend supports. Defaults to all false for generic-server. */
+  capabilities?: Partial<ProviderCapabilities>;
 };
 
 export type ChatAction = {
@@ -155,18 +171,20 @@ export type PaginatedMessages = {
   };
 };
 
-export interface WhatsAppProvider {
+export interface MessagingProvider {
   readonly type: ProviderType;
-  readonly supportsTemplates: boolean;
-  readonly has24HourWindow: boolean;
+  readonly capabilities: ProviderCapabilities;
 
-  getConnectionState(instanceName: string): Promise<'open' | 'close' | 'connecting'>;
-  findChats(instanceName: string): Promise<Chat[]>;
-  findMessages(instanceName: string, chatId: string, limit?: number): Promise<Message[]>;
-  findMessagesPaginated(instanceName: string, chatId: string, options?: FindMessagesOptions): Promise<PaginatedMessages>;
-  sendText(instanceName: string, params: SendTextParams): Promise<SendResult>;
-  sendMedia(instanceName: string, params: SendMediaParams): Promise<SendResult>;
-  sendButtons(instanceName: string, params: SendButtonsParams): Promise<SendResult>;
-  getMediaUrl(instanceName: string, messageId: string): Promise<string | null>;
-  deleteMessage(instanceName: string, messageId: string, remoteJid: string, fromMe: boolean): Promise<void>;
+  getConnectionState(channelId: string): Promise<'open' | 'close' | 'connecting'>;
+  findChats(channelId: string): Promise<Chat[]>;
+  findMessages(channelId: string, chatId: string, limit?: number): Promise<Message[]>;
+  findMessagesPaginated(channelId: string, chatId: string, options?: FindMessagesOptions): Promise<PaginatedMessages>;
+  sendText(channelId: string, params: SendTextParams): Promise<SendResult>;
+  sendMedia(channelId: string, params: SendMediaParams): Promise<SendResult>;
+  sendButtons(channelId: string, params: SendButtonsParams): Promise<SendResult>;
+  getMediaUrl(channelId: string, messageId: string): Promise<string | null>;
+  deleteMessage(channelId: string, params: DeleteMessageParams): Promise<void>;
 }
+
+/** @deprecated Use MessagingProvider */
+export type WhatsAppProvider = MessagingProvider;

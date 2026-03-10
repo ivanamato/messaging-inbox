@@ -194,6 +194,15 @@ app.post('/chat/findChats/:instance', (c) => {
   return c.json(updatedChats);
 });
 
+// ── Test reset — wipe in-memory state for an instance ────────────────────────
+
+app.post('/test/reset/:instance', (c) => {
+  const instance = c.req.param('instance');
+  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  store.reset(instance);
+  return new Response(null, { status: 204 });
+});
+
 // ── Find Contacts ─────────────────────────────────────────────────────────────
 
 app.post('/chat/findContacts/:instance', (c) => {

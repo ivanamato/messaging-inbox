@@ -10,6 +10,17 @@ services:
     ports:
       - "3002:3002"
 
+  generic-server:
+    build: .
+    command: npx tsx mock-server/generic-server-index.ts
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      GENERIC_PORT: "3003"
+    ports:
+      - "3003:3003"
+
   frontend:
     build: .
     command: npx vite --host 0.0.0.0 --port 5173
@@ -20,3 +31,4 @@ services:
       - "5173:5173"
     depends_on:
       - mock-server
+      - generic-server

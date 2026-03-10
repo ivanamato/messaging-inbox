@@ -72,12 +72,10 @@ export function MessageContextMenu({
 
     setDeleting(true);
     try {
-      await provider.deleteMessage(
-        instance,
-        message.id,
-        conversationId,
-        message.direction === 'outbound'
-      );
+      await provider.deleteMessage(instance, {
+        messageId: message.id,
+        metadata: { remoteJid: conversationId, fromMe: message.direction === 'outbound' },
+      });
 
       setShowDeleteConfirm(false);
       onDeleted(message.id);

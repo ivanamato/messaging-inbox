@@ -9,7 +9,7 @@ import type { DeviceConfig, ViewMode } from '@/lib/providers/types';
 import type { DeviceStatus } from '@/use-cases/use-device-status';
 
 type Props = {
-  onDeviceChange: (device: { instanceName: string; provider: 'evolution' | 'cloud' } | null) => void;
+  onDeviceChange: (device: { instanceName: string; provider: string } | null) => void;
 };
 
 export function InstanceSelector({ onDeviceChange }: Props) {
@@ -68,7 +68,7 @@ export function InstanceSelector({ onDeviceChange }: Props) {
               {selectedDevice?.label || selectedDevice?.instanceName || t('instanceSelector.selectDevice')}
             </span>
             <Badge variant="outline" className="wa:text-xs wa:px-2 wa:py-0.5 wa:h-5 wa:uppercase wa:text-[#8696a0] wa:border-[#8696a0]/40">
-              {(selectedDevice?.providerType || 'evolution') === 'evolution' ? 'EVO' : 'CLOUD'}
+              {(selectedDevice?.providerType || 'evolution') === 'evolution' ? 'EVO' : 'GEN'}
             </Badge>
             <ChevronDown className="wa:h-5 wa:w-5 wa:text-[#8696a0]" />
           </button>
@@ -178,7 +178,7 @@ function DeviceOption({
         )}
       </div>
       <Badge variant="outline" className="wa:text-xs wa:px-2 wa:py-0.5 wa:h-5 wa:uppercase wa:flex-shrink-0 wa:text-[#8696a0] wa:border-[#8696a0]/40">
-        {(device.providerType || 'evolution') === 'evolution' ? 'EVO' : 'CLOUD'}
+        {(device.providerType || 'evolution') === 'evolution' ? 'EVO' : 'GEN'}
       </Badge>
       {isSelected && (
         <Check className="wa:h-5 wa:w-5 wa:text-[#00a884] wa:flex-shrink-0" />

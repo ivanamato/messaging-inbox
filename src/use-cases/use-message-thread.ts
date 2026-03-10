@@ -3,7 +3,7 @@ import { differenceInHours, isValid } from 'date-fns';
 import { useProvider } from '@/lib/provider-context';
 import { useAutoPolling } from '@/hooks/use-auto-polling';
 import { useTranslations } from '@/lib/i18n';
-import type { Message, WhatsAppProvider } from '@/lib/providers/types';
+import type { Message, MessagingProvider } from '@/lib/providers/types';
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ type Props = {
   instance?: string;
   /** Provider type string, used by sub-components (MessageContextMenu, etc.) */
   providerType?: string;
-  providerOverride?: WhatsAppProvider;
+  providerOverride?: MessagingProvider;
   onTemplateSent?: (phoneNumber: string) => Promise<void>;
   onMessageSent?: () => void;
   /**
@@ -94,6 +94,9 @@ export function useMessageThread({
   const provider = providerOverride ?? contextProvider;
   const t = useTranslations();
 
+  const supportsTemplates = provider.capabilities.templates;
+  const has24HWindow = provider.capabilities.messagingWindow24h;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -118,8 +121,6 @@ export function useMessageThread({
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appliedPrefillIdRef = useRef<number | null>(null);
-
-  const isCloudProvider = providerType === 'cloud';
 
   // ─── Prefill ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -216,10 +217,10 @@ export function useMessageThread({
     }
   }, [conversationId, instance]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 24-hour window gate (cloud providers only)
+  // 24-hour window gate (providers with messagingWindow24h capability only)
   useEffect(() => {
-    setCanSendRegularMessage(isCloudProvider ? isWithin24HourWindow(messages) : true);
-  }, [messages, isCloudProvider]);
+    setCanSendRegularMessage(has24HWindow ? isWithin24HourWindow(messages) : true);
+  }, [messages, has24HWindow]);
 
   useAutoPolling({
     interval: 5000,
@@ -664,7 +665,8 @@ export function useMessageThread({
     send,
     handleTemplateSentInternal,
     handleRefresh,
-    isCloudProvider,
+    supportsTemplates,
+    has24HourWindow: has24HWindow,
     currentPageRef,
     recordingState,
     recordingDuration,

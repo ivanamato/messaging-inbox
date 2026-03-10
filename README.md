@@ -103,22 +103,24 @@ type DeviceConfig = {
   apiUrl: string;
   instanceToken: string;
   instanceName: string;
-  providerType?: 'evolution' | 'cloud';
+  providerType?: 'evolution' | 'generic-server';
   readonly?: boolean;
   prebuiltMessages?: PrebuiltMessage[];
+  capabilities?: Partial<ProviderCapabilities>;
 };
 ```
 
 | Field | Required | Description |
 |---|---|---|
 | `id` | Yes | Unique identifier for this device — used to target it via the imperative API |
-| `apiUrl` | Yes | Evolution API base URL (e.g. `https://your-api.com`) |
-| `instanceToken` | Yes | Per-instance token from Evolution API — see [Security](#security) |
-| `instanceName` | Yes | Evolution API instance name |
-| `label` | No | Display name shown in the device selector dropdown |
-| `providerType` | No | `'evolution'` (default) or `'cloud'` |
+| `apiUrl` | Yes | Base URL of the backend API |
+| `instanceToken` | Yes | Auth token sent with every request — see [Security](#security) |
+| `instanceName` | Yes | Channel/instance identifier passed as `:channelId` or `:instance` in API routes |
+| `label` | No | Display name shown in the device selector |
+| `providerType` | No | `'evolution'` (default) — Evolution API v2 directly. `'generic-server'` — your own backend via the normalized REST contract |
 | `readonly` | No | If `true`, hides the composer — agents can read but not send |
 | `prebuiltMessages` | No | Reusable message templates and audio voice notes — see [Pre-built Messages](#configdevicesprebuiltmessages--pre-built-messages) |
+| `capabilities` | No | Feature flags for `generic-server` devices — see [Capabilities](#capabilities--feature-flags) |
 
 **Minimal example:**
 
@@ -525,6 +527,308 @@ prebuiltMessages: [
 
 ---
 
+### Generic Server Provider
+
+The `generic-server` provider type connects the inbox to **any messaging backend** — WhatsApp Cloud API, Instagram DM, Facebook Messenger, SMS, email, or your own internal messaging system. Instead of calling the Evolution API directly, the inbox calls your backend using a simple normalized REST contract. Your backend translates those calls into whatever the underlying channel requires.
+
+This means the inbox UI — conversation list, message thread, composer, media, voice recording, read receipts — works identically regardless of which channel is behind it.
+
+#### Configuration
+
+```js
+mount(el, {
+  devices: [
+    {
+      id: 'whatsapp-cloud',
+      label: 'WhatsApp Cloud',
+      providerType: 'generic-server',
+      apiUrl: 'https://api.yourcompany.com',
+      instanceToken: 'your-channel-token',
+      instanceName: 'wa-cloud-prod',
+      capabilities: {
+        templates: true,
+        messagingWindow24h: true,
+      },
+    },
+    {
+      id: 'instagram',
+      label: 'Instagram DM',
+      providerType: 'generic-server',
+      apiUrl: 'https://api.yourcompany.com',
+      instanceToken: 'your-instagram-token',
+      instanceName: 'instagram-prod',
+    },
+  ],
+});
+```
+
+- `apiUrl` — Base URL of your backend
+- `instanceToken` — Sent as `Authorization: Bearer <token>` on every request
+- `instanceName` — Used as the `:channelId` path parameter in all routes
+- `capabilities` — Declares which features your backend supports (see below)
+
+---
+
+#### Capabilities — Feature flags
+
+Declare what your backend supports. Unset flags default to `false`.
+
+```ts
+type ProviderCapabilities = {
+  templates: boolean;          // Show the template-message button in the composer
+  messagingWindow24h: boolean; // Enforce the 24-hour messaging window (WhatsApp Cloud API)
+  pushToTalk: boolean;         // Enable voice recording in the composer
+  interactiveButtons: boolean; // Enable the interactive button message dialog
+  deleteForEveryone: boolean;  // Show "delete for everyone" in the message context menu
+};
+```
+
+| Capability | Evolution API | Notes |
+|---|---|---|
+| `templates` | `false` | Enable for channels that support template / HSM messages |
+| `messagingWindow24h` | `false` | When `true`, the composer disables after 24 h without an inbound message |
+| `pushToTalk` | `true` | Disable for channels that don't support audio messages |
+| `interactiveButtons` | `true` | Disable for channels that don't support button messages |
+| `deleteForEveryone` | `true` | Disable if your backend doesn't support message deletion |
+
+---
+
+#### API contract
+
+Your backend must implement the following 8 endpoints. All paths are relative to `apiUrl`, and `:channelId` is always `instanceName`. Every request (except `OPTIONS` preflight) carries `Authorization: Bearer <instanceToken>`.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/channels/:channelId/status` | Connection state |
+| `GET` | `/channels/:channelId/chats` | Chat list |
+| `GET` | `/channels/:channelId/chats/:chatId/messages` | Paginated message history |
+| `POST` | `/channels/:channelId/messages/text` | Send a text message |
+| `POST` | `/channels/:channelId/messages/media` | Send image / video / audio / document |
+| `POST` | `/channels/:channelId/messages/buttons` | Send interactive button message |
+| `GET` | `/channels/:channelId/media/:messageId` | Resolve a media URL |
+| `DELETE` | `/channels/:channelId/messages/:messageId` | Delete a message for everyone |
+
+---
+
+##### `GET /channels/:channelId/status`
+
+Returns whether the channel is connected.
+
+**Response `200`:**
+```json
+{ "state": "open" }
+```
+
+`state` is one of `"open"`, `"close"`, or `"connecting"`.
+
+---
+
+##### `GET /channels/:channelId/chats`
+
+Returns all conversations, sorted by `lastActiveAt` descending (most recent first).
+
+**Response `200` — `Chat[]`:**
+```ts
+type Chat = {
+  id: string;             // Unique ID for this conversation — used as :chatId in other routes
+  phoneNumber: string;    // Contact phone number (digits only, no + or @)
+  contactName?: string;   // Display name
+  profilePicUrl?: string; // Avatar URL
+  lastActiveAt?: string;  // ISO 8601 timestamp
+  lastMessage?: {
+    content: string;
+    direction: 'inbound' | 'outbound';
+    type?: string;
+  };
+  unreadCount?: number;
+};
+```
+
+---
+
+##### `GET /channels/:channelId/chats/:chatId/messages?page=1&pageSize=50`
+
+Returns a paginated message list. The inbox loads `page=1` on open and increments `page` as the user scrolls up for older messages.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `1` | 1-based page number |
+| `pageSize` | `50` | Items per page |
+
+**Response `200`:**
+```ts
+type PaginatedMessages = {
+  messages: Message[];       // Sorted oldest-first (ascending createdAt)
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
+type Message = {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  content: string;                    // Display text (empty string for media-only)
+  createdAt: string;                  // ISO 8601 timestamp
+  status?: string;                    // 'sent' | 'delivered' | 'read' | 'failed' | 'pending'
+  phoneNumber: string;
+  hasMedia: boolean;
+  messageType: string;                // See table below
+  reactionEmoji?: string | null;
+  reactedToMessageId?: string | null;
+  caption?: string | null;            // Caption rendered below media
+  filename?: string | null;           // Shown for document messages
+  mimeType?: string | null;
+  metadata?: Record<string, unknown>; // Pass { mediaId } to trigger lazy media fetching
+  senderName?: string;                // Display name for group-chat participants
+};
+```
+
+**`messageType` values and how the inbox renders them:**
+
+| `messageType` | `hasMedia` | Rendered as |
+|---|---|---|
+| `text` | `false` | Plain text bubble |
+| `image` | `true` | Inline image |
+| `video` | `true` | Video player |
+| `audio` | `true` | Audio waveform player |
+| `document` | `true` | Downloadable file with filename |
+| `deleted` | `false` | Greyed-out "This message was deleted" |
+| `reaction` | `false` | Emoji overlaid on the reacted message |
+
+**Media loading:** to load media lazily (recommended for large files), set `hasMedia: true` and pass `metadata: { mediaId: "<id>" }`. The inbox calls `GET /media/:messageId` with that ID when the user first views the message. Alternatively, populate `mediaData.url` directly to bypass the media endpoint.
+
+---
+
+##### `POST /channels/:channelId/messages/text`
+
+Send a text message.
+
+**Request body:**
+```json
+{ "to": "5511999999999", "body": "Hello!" }
+```
+
+**Response `200`:**
+```json
+{ "messageId": "msg_abc123", "status": "sent" }
+```
+
+---
+
+##### `POST /channels/:channelId/messages/media`
+
+Send an image, video, audio PTT, or document. The file is provided as a base64 string.
+
+**Request body:**
+```ts
+{
+  to: string;
+  mediaType: 'image' | 'video' | 'audio' | 'document';
+  media: string;      // Base64-encoded file data
+  caption?: string;
+  fileName?: string;
+  mimeType?: string;
+  ptt?: boolean;      // true = send audio as a PTT voice note
+}
+```
+
+**Response `200`:**
+```json
+{ "messageId": "msg_def456", "status": "sent" }
+```
+
+---
+
+##### `POST /channels/:channelId/messages/buttons`
+
+Send an interactive button message (up to 3 options). Only relevant when `capabilities.interactiveButtons` is `true`.
+
+**Request body:**
+```ts
+{
+  to: string;
+  body: string;          // Main message text
+  header?: string;       // Optional title above the body
+  buttons: Array<{
+    id: string;
+    title: string;
+  }>;
+}
+```
+
+**Response `200`:**
+```json
+{ "messageId": "msg_ghi789", "status": "sent" }
+```
+
+---
+
+##### `GET /channels/:channelId/media/:messageId`
+
+Returns a URL to the media file. The inbox opens this URL directly in the browser (`<img>`, `<video>`, `<audio>`, or a download link), so it must be publicly accessible or protected by a short-lived pre-signed token.
+
+**Response `200`:**
+```json
+{ "url": "https://cdn.yourcompany.com/media/abc123.jpg" }
+```
+
+Return `404` if the media is unavailable — the inbox shows a "Media unavailable" placeholder.
+
+---
+
+##### `DELETE /channels/:channelId/messages/:messageId`
+
+Delete a message for everyone. The optional request body can carry provider-specific metadata your backend needs.
+
+**Request body (optional):**
+```json
+{ "metadata": { "remoteJid": "5511999999999", "fromMe": true } }
+```
+
+**Response `204` (no body).**
+
+---
+
+#### CORS
+
+The browser calls your backend directly, so CORS must allow requests from the host app's origin:
+
+```
+Access-Control-Allow-Origin:  https://your-app.com  (or * for dev)
+Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+---
+
+#### Example: WhatsApp Cloud API proxy
+
+A minimal Express handler that adapts `GET /channels/:channelId/chats` to the WhatsApp Cloud API:
+
+```js
+app.get('/channels/:channelId/chats', async (req, res) => {
+  const conversations = await cloudApi.listConversations(req.params.channelId);
+  res.json(conversations.map(c => ({
+    id: c.id,
+    phoneNumber: c.customer_phone,
+    contactName: c.display_name,
+    lastMessage: {
+      content: c.last_message.text,
+      direction: c.last_message.from_me ? 'outbound' : 'inbound',
+    },
+    unreadCount: c.unread_count,
+    lastActiveAt: c.updated_at,
+  })));
+});
+```
+
+---
+
 ### Imperative API — `WhatsAppInbox`
 
 `mount()` returns a `WhatsAppInbox` object for controlling the inbox programmatically.
@@ -906,8 +1210,9 @@ src/
     ui/                     # shadcn/ui components (dialog, scroll-area, etc.)
   lib/
     providers/
-      types.ts              # WhatsAppProvider interface, DeviceConfig, Chat, Message
+      types.ts              # MessagingProvider interface, DeviceConfig, Chat, Message, ProviderCapabilities
       evolution.ts          # Evolution API v2 implementation (browser fetch)
+      generic-server.ts     # Generic normalized REST implementation (any backend)
       index.ts              # createProvider() factory
     provider-context.tsx    # Preact context for multi-device state
   hooks/
@@ -922,13 +1227,16 @@ mock-server/
   app.ts                    # Hono router — all Evolution API routes
   fixtures.ts               # Per-instance fixture data (MOCK1, MOCK2)
   store.ts                  # In-memory state (sent messages, media, contacts, unread)
+  generic-server-index.ts   # Entry point for generic server (GENERIC_PORT, default 3003)
+  generic-server-app.ts     # Hono router — generic normalized REST API (/channels/...)
+  generic-fixtures.ts       # Normalized fixture data (GENERIC1)
 ```
 
 ### Key Patterns
 
 - **No backend** — All API calls (`findChats`, `sendText`, `getMediaUrl`, etc.) happen directly from the browser via the provider abstraction.
 - **Per-instance tokens** — Each device authenticates with its own scoped token, not the global API key.
-- **Provider system** — Implement the `WhatsAppProvider` interface to add new backends. Currently supports Evolution API v2.
+- **Provider system** — Two built-in providers: `EvolutionProvider` (Evolution API v2, direct) and `GenericServerProvider` (normalized REST, any backend). Implement the `MessagingProvider` interface to add more.
 - **Preact with compat** — Uses Preact with `preact/compat` so React-ecosystem libraries work unchanged.
 - **CSS isolation** — Tailwind v4 with `wa:` prefix (e.g. `wa:flex`, `wa:p-4`). CSS variables namespaced as `--wa-*`.
 - **Optimistic sends** — Messages appear immediately in the thread with a pending status; the chat list refreshes after the send resolves.
@@ -938,7 +1246,7 @@ mock-server/
 
 The mock server (`mock-server/`) is a [Hono](https://hono.dev/) HTTP server that replicates the Evolution API v2 contract for local development — no real WhatsApp credentials needed.
 
-**Implemented endpoints:**
+**Evolution mock endpoints (port 3002):**
 
 | Endpoint | Method | Description |
 |---|---|---|
@@ -951,10 +1259,28 @@ The mock server (`mock-server/`) is a [Hono](https://hono.dev/) HTTP server that
 | `/message/sendMedia/:instance` | POST | Stores message + base64 payload |
 | `/message/sendButtons/:instance` | POST | Stores button message |
 | `/chat/deleteMessageForEveryone/:instance` | DELETE | Marks message deleted; emits REVOKE event |
+| `/test/reset/:instance` | POST | Wipes in-memory state for an instance (used by e2e tests in `beforeEach`) |
+
+**Generic mock endpoints (port 3003):**
+
+Implements the full [generic server contract](#api-contract) for the `GENERIC1` instance (Alice Martin, Bob Chen). Auth: `Authorization: Bearer generic-token-789`.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/channels/:channelId/status` | GET | Returns `{ state: 'open' }` |
+| `/channels/:channelId/chats` | GET | Returns normalized chat list, updated with sent messages |
+| `/channels/:channelId/chats/:chatId/messages` | GET | Returns `PaginatedMessages` |
+| `/channels/:channelId/messages/text` | POST | Stores sent message, returns `{ messageId, status }` |
+| `/channels/:channelId/messages/media` | POST | Stores sent media message |
+| `/channels/:channelId/messages/buttons` | POST | Stores button message |
+| `/channels/:channelId/media/:messageId` | GET | Returns `{ url }` for stored media |
+| `/channels/:channelId/messages/:messageId` | DELETE | Marks message deleted (204) |
+| `/channels/:channelId/reset` | POST | Wipes in-memory state (used by e2e tests in `beforeEach`) |
 
 **Mock instances:**
 - `MOCK1` — Brazilian contacts (Ana Beatriz, Carlos Eduardo, Equipe Vendas group, Fernanda Lima, Roberto Mendes)
 - `MOCK2` — International contacts (Sarah Johnson, James Wright, Product Team group, Miguel Torres)
+- `GENERIC1` — Generic channel contacts (Alice Martin, Bob Chen)
 
 ## Publishing
 
