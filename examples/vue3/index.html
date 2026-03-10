@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WhatsApp Inbox — Vue 3 Example</title>
   <!-- Load the compiled library CSS -->
-  <link rel="stylesheet" href="../../dist/whatsapp-inbox.css" />
+  <link rel="stylesheet" href="../../dist/messaging-inbox.css" />
   <style>
     * {
       margin: 0;
@@ -62,7 +62,7 @@
   <!-- Vue 3 from CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <!-- Compiled WhatsApp Inbox library (UMD) -->
-  <script src="../../dist/whatsapp-inbox.umd.js"></script>
+  <script src="../../dist/messaging-inbox.umd.js"></script>
 
   <script>
     const { createApp, ref, onMounted, onBeforeUnmount, nextTick } = Vue;
@@ -246,7 +246,7 @@
             return tags;
           };
 
-          inboxRef.value = WhatsAppInbox.mount(inboxContainer.value, config);
+          inboxRef.value = MessagingInbox.mount(inboxContainer.value, config);
         }
 
         // --- Imperative API demo functions ---

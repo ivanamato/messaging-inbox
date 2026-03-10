@@ -1,21 +1,21 @@
 {
-  "name": "@ivanamato/whatsapp-inbox",
+  "name": "@ivanamato/messaging-inbox",
   "version": "0.27.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ivanamato/whatsapp-frontend"
+    "url": "https://github.com/ivanamato/messaging-inbox"
   },
   "type": "module",
-  "main": "./dist/whatsapp-inbox.umd.js",
-  "module": "./dist/whatsapp-inbox.es.js",
+  "main": "./dist/messaging-inbox.umd.js",
+  "module": "./dist/messaging-inbox.es.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/whatsapp-inbox.es.js",
-      "require": "./dist/whatsapp-inbox.umd.js"
+      "import": "./dist/messaging-inbox.es.js",
+      "require": "./dist/messaging-inbox.umd.js"
     },
-    "./style.css": "./dist/whatsapp-inbox.css"
+    "./style.css": "./dist/messaging-inbox.css"
   },
   "files": [
     "dist"
