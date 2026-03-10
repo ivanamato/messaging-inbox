@@ -5,6 +5,7 @@ export type Translations = {
   'conversationList.chats': string;
   'conversationList.autoUpdating': string;
   'conversationList.searchPlaceholder': string;
+  'conversationList.searchOnlyPlaceholder': string;
   'conversationList.noConversationsFound': string;
   'conversationList.noConversationsYet': string;
   'conversationList.selectInstance': string;
@@ -110,6 +111,7 @@ export const defaultTranslations: Translations = {
   'conversationList.chats': 'Chats',
   'conversationList.autoUpdating': 'Auto-updating',
   'conversationList.searchPlaceholder': 'Search or start new chat',
+  'conversationList.searchOnlyPlaceholder': 'Search chats',
   'conversationList.noConversationsFound': 'No conversations found',
   'conversationList.noConversationsYet': 'No conversations yet',
   'conversationList.selectInstance': 'Select an instance to view chats',

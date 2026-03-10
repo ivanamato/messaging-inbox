@@ -2,12 +2,37 @@
 
 export type ProviderType = 'evolution' | 'generic-server';
 
+export type ConversationIdentifierType = 'phone' | 'username' | 'opaque';
+
+export type ConversationInitiationCapability = {
+  /** Whether the platform allows the business to start new conversations. */
+  canInitiate: boolean;
+  /** What kind of identifier is used to address contacts. Default: 'phone'. */
+  identifierType: ConversationIdentifierType;
+  /** UI label for the identifier input (e.g. "Phone number", "Username"). Falls back to identifierType. */
+  identifierLabel?: string;
+};
+
+const DEFAULT_INITIATION: ConversationInitiationCapability = {
+  canInitiate: true,
+  identifierType: 'phone',
+};
+
+/** Resolve conversation initiation capability with backward-compatible defaults. */
+export function resolveInitiationCapability(
+  caps: ProviderCapabilities,
+): ConversationInitiationCapability {
+  return caps.conversationInitiation ?? DEFAULT_INITIATION;
+}
+
 export type ProviderCapabilities = {
   templates: boolean;
   messagingWindow24h: boolean;
   pushToTalk: boolean;
   interactiveButtons: boolean;
   deleteForEveryone: boolean;
+  /** How/whether new conversations can be initiated. Defaults to phone-based free initiation. */
+  conversationInitiation?: ConversationInitiationCapability;
 };
 
 export type DeleteMessageParams = {

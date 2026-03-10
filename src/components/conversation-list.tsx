@@ -14,6 +14,7 @@ import { ChatActionsTrigger, ChatActionsDialog } from '@/components/chat-actions
 import { useChatList } from '@/use-cases/use-chat-list';
 import type { Conversation } from '@/use-cases/types';
 import type { ChatActionsResolver, ChatTagsResolver, BulkChatTagsResolver, DeviceConfig } from '@/lib/providers/types';
+import { resolveInitiationCapability } from '@/lib/providers/types';
 import { useState } from 'react';
 
 function formatConversationDate(timestamp: string, yesterdayLabel: string): string {
@@ -49,7 +50,7 @@ export type ConversationListRef = {
 
 export const ConversationList = forwardRef<ConversationListRef, Props>(
   ({ onSelectConversation, selectedConversationId, isHidden = false, instance, chatActions, chatTags, chatTagsBulk }, ref) => {
-  const { viewMode, devices, selectedDevice } = useDeviceContext();
+  const { viewMode, devices, selectedDevice, getProviderForDevice } = useDeviceContext();
   const t = useTranslations();
   const [searchFocused, setSearchFocused] = useState(false);
   const [dialogTarget, setDialogTarget] = useState<{ conversation: Conversation; device: DeviceConfig } | null>(null);
@@ -71,6 +72,16 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   } = useChatList({ instance, chatTags, chatTagsBulk });
 
   const handleRefresh = () => { refresh(); };
+
+  // Merge device-level capability overrides onto provider capabilities
+  const getEffectiveCaps = (device: DeviceConfig) => {
+    const providerCaps = getProviderForDevice(device).capabilities;
+    return device.capabilities ? { ...providerCaps, ...device.capabilities } : providerCaps;
+  };
+
+  const canInitiateChat = selectedDevice
+    ? resolveInitiationCapability(getEffectiveCaps(selectedDevice)).canInitiate
+    : true;
 
   useImperativeHandle(ref, () => ({
     refresh,
@@ -94,9 +105,13 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
       const fresh = await refresh();
       const found = fresh.find(match);
       if (found) { onSelectConversation(found); return; }
-      // Not found — open a blank thread for this phone number
+      // Not found — check if platform supports initiating new conversations
       const targetDeviceId = deviceId ?? selectedDevice?.id;
       const targetDevice = devices.find(d => d.id === targetDeviceId) ?? selectedDevice;
+      if (targetDevice) {
+        const initCap = resolveInitiationCapability(getEffectiveCaps(targetDevice));
+        if (!initCap.canInitiate) return;
+      }
       onSelectConversation({
         id: phoneNumber,
         phoneNumber,
@@ -201,7 +216,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
-              placeholder={t('conversationList.searchPlaceholder')}
+              placeholder={canInitiateChat ? t('conversationList.searchPlaceholder') : t('conversationList.searchOnlyPlaceholder')}
               className="wa:flex-1 wa:bg-transparent wa:border-none wa:outline-none wa:text-[13px] wa:text-[#111b21] wa:placeholder-[#667781] wa:h-full"
             />
           </div>

@@ -448,6 +448,7 @@ export class EvolutionProvider implements MessagingProvider {
     pushToTalk: true,
     interactiveButtons: true,
     deleteForEveryone: true,
+    conversationInitiation: { canInitiate: true, identifierType: 'phone' },
   };
 
   // Cache: @s.whatsapp.net JID -> @lid JID (built during findChats)

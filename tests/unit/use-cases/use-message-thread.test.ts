@@ -64,8 +64,13 @@ function makePaginated(messages: Message[], hasMore = false): PaginatedMessages 
 function createMockProvider(): WhatsAppProvider {
   return {
     type: 'evolution',
-    supportsTemplates: false,
-    has24HourWindow: false,
+    capabilities: {
+      templates: false,
+      messagingWindow24h: false,
+      pushToTalk: false,
+      interactiveButtons: false,
+      deleteForEveryone: false,
+    },
     getConnectionState: vi.fn().mockResolvedValue('open'),
     findChats: vi.fn().mockResolvedValue([]),
     findMessages: vi.fn().mockResolvedValue([]),

@@ -396,7 +396,10 @@ describe('EvolutionProvider', () => {
     it('calls DELETE endpoint with correct body', async () => {
       fetchMock.mockResolvedValueOnce(mockResponse({}));
 
-      await provider.deleteMessage(INSTANCE, 'msg-123', '5511999999999@s.whatsapp.net', true);
+      await provider.deleteMessage(INSTANCE, {
+        messageId: 'msg-123',
+        metadata: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: true },
+      });
 
       expect(fetchMock).toHaveBeenCalledWith(
         `${BASE_URL}/chat/deleteMessageForEveryone/${INSTANCE}`,
@@ -415,7 +418,10 @@ describe('EvolutionProvider', () => {
       fetchMock.mockResolvedValueOnce(mockResponse({}));
 
       await expect(
-        provider.deleteMessage(INSTANCE, 'msg-456', '5511999999999@s.whatsapp.net', false),
+        provider.deleteMessage(INSTANCE, {
+          messageId: 'msg-456',
+          metadata: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false },
+        }),
       ).resolves.toBeUndefined();
     });
   });

@@ -5,7 +5,8 @@ import { ImperativeApiBridge, type ImperativeApi } from './imperative-bridge';
 import './app/globals.css';
 
 
-export type { MessagingProvider, WhatsAppProvider, ProviderType, ProviderCapabilities, DeleteMessageParams, Chat, Message, SendTextParams, SendMediaParams, SendButtonsParams, SendResult, DeviceConfig, WhatsAppMultiDeviceConfig, ChatAction, ChatActionsResolver, ChatTag, ChatTagsResolver, BulkChatTagsEntry, BulkChatTagsResolver, PrebuiltMessage } from './lib/providers/types';
+export type { MessagingProvider, WhatsAppProvider, ProviderType, ProviderCapabilities, ConversationIdentifierType, ConversationInitiationCapability, DeleteMessageParams, Chat, Message, SendTextParams, SendMediaParams, SendButtonsParams, SendResult, DeviceConfig, WhatsAppMultiDeviceConfig, ChatAction, ChatActionsResolver, ChatTag, ChatTagsResolver, BulkChatTagsEntry, BulkChatTagsResolver, PrebuiltMessage } from './lib/providers/types';
+export { resolveInitiationCapability } from './lib/providers/types';
 export type { Translations } from './lib/i18n';
 export { defaultTranslations, useTranslations, TranslationsProvider } from './lib/i18n';
 export { EvolutionProvider } from './lib/providers/evolution';

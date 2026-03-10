@@ -18,6 +18,7 @@ const DEFAULT_GENERIC_CAPABILITIES: ProviderCapabilities = {
   pushToTalk: false,
   interactiveButtons: false,
   deleteForEveryone: false,
+  conversationInitiation: { canInitiate: false, identifierType: 'opaque' },
 };
 
 export class GenericServerProvider implements MessagingProvider {

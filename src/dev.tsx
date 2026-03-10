@@ -137,8 +137,21 @@ loadConfig().then((config) => {
 
   // ── Section: Start new chat ─────────────────────────────────────────────
   const s3 = section('Start new chat');
+
+  // Show per-device initiation capability
+  for (const device of config.devices) {
+    const caps = device.capabilities?.conversationInitiation;
+    const canInit = caps?.canInitiate ?? true; // default: phone-based free initiation
+    const idType = caps?.identifierType ?? 'phone';
+    const tag = document.createElement('p');
+    tag.style.cssText = 'font-size:11px;margin-bottom:6px;color:#667781';
+    tag.innerHTML = `<strong>${device.label || device.id}</strong>: ${canInit ? `✅ can initiate (${idType})` : '❌ cannot initiate'}`;
+    s3.appendChild(tag);
+  }
+
+  // Input row for openChat
   const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:6px;align-items:center';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:4px';
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = 'Phone number…';
@@ -165,4 +178,10 @@ loadConfig().then((config) => {
   row.appendChild(input);
   row.appendChild(openBtn);
   s3.appendChild(row);
+
+  // Per-device openChat buttons to test the gate
+  s3.appendChild(btn('Open new on WhatsApp 1', () =>
+    inbox.openChat('5599999999999', { deviceId: 'mock-device-1' })));
+  s3.appendChild(btn('Open new on Instagram (blocked)', () =>
+    inbox.openChat('99999', { deviceId: 'mock-device-2' }), '#e91e63'));
 });
