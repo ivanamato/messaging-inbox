@@ -5,7 +5,7 @@ import { ImperativeApiBridge, type ImperativeApi } from './imperative-bridge';
 import './app/globals.css';
 
 
-export type { MessagingProvider, WhatsAppProvider, ProviderType, ProviderCapabilities, ConversationIdentifierType, ConversationInitiationCapability, DeleteMessageParams, Chat, Message, SendTextParams, SendMediaParams, SendButtonsParams, SendResult, DeviceConfig, WhatsAppMultiDeviceConfig, ChatAction, ChatActionsResolver, ChatTag, ChatTagsResolver, BulkChatTagsEntry, BulkChatTagsResolver, PrebuiltMessage } from './lib/providers/types';
+export type { MessagingProvider, WhatsAppProvider, ProviderType, ProviderCapabilities, ConversationIdentifierType, ConversationInitiationCapability, DeleteMessageParams, Chat, Message, SendTextParams, SendMediaParams, SendButtonsParams, SendResult, DeviceConfig, WhatsAppMultiDeviceConfig, ChatAction, ChatActionsResolver, ChatTag, ChatTagsResolver, BulkChatTagsEntry, BulkChatTagsResolver, PrebuiltMessage, GenericServerEndpoints } from './lib/providers/types';
 export { resolveInitiationCapability } from './lib/providers/types';
 export type { Translations } from './lib/i18n';
 export { defaultTranslations, useTranslations, TranslationsProvider } from './lib/i18n';
@@ -17,6 +17,8 @@ export { ConversationList } from './components/conversation-list';
 export { MessageView } from './components/message-view';
 export { InstanceSelector } from './components/instance-selector';
 export { App } from './App';
+export { DebugStore } from './lib/debug';
+export type { RequestLogEntry, TimelineEvent, ValidationIssue } from './lib/debug';
 
 import type { WhatsAppMultiDeviceConfig, Chat, Message, SendResult, SendTextParams } from './lib/providers/types';
 

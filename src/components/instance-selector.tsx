@@ -64,6 +64,9 @@ export function InstanceSelector({ onDeviceChange }: Props) {
             className="wa:flex wa:flex-1 wa:items-center wa:justify-center wa:gap-3 wa:px-4 wa:py-3 wa:rounded-lg hover:wa:bg-white/10 wa:transition-colors wa:min-w-0"
           >
             <StatusDot status={selectedDevice ? (statuses[selectedDevice.id] || 'close') : 'close'} />
+            {selectedDevice?.icon && (
+              <img src={selectedDevice.icon} alt="" data-testid="device-icon" className="wa:h-5 wa:w-5 wa:flex-shrink-0 wa:object-contain" />
+            )}
             <span className="wa:text-base wa:font-medium wa:text-[#e9edef] wa:truncate">
               {selectedDevice?.label || selectedDevice?.instanceName || t('instanceSelector.selectDevice')}
             </span>
@@ -169,6 +172,9 @@ function DeviceOption({
       )}
     >
       <StatusDot status={status} />
+      {device.icon && (
+        <img src={device.icon} alt="" data-testid="device-option-icon" className="wa:h-5 wa:w-5 wa:flex-shrink-0 wa:object-contain" />
+      )}
       <div className="wa:flex-1 wa:min-w-0 wa:text-left">
         <p className="wa:text-base wa:font-medium wa:text-[#e9edef] wa:truncate">
           {device.label || device.instanceName}

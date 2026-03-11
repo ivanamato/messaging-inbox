@@ -63,9 +63,39 @@ export type PrebuiltMessage = {
   mimeType?: string;
 };
 
+/**
+ * Endpoint map for the generic-server provider.
+ *
+ * Each value is a string in the format `"METHOD /path/with/{placeholders}"`.
+ * Supported placeholders: `{channelId}`, `{chatId}`, `{messageId}`, `{page}`, `{pageSize}`.
+ * All placeholders are URI-encoded automatically.
+ *
+ * Defaults (used when a key is omitted):
+ * - status:      `"GET /channels/{channelId}/status"`
+ * - chats:       `"GET /channels/{channelId}/chats"`
+ * - messages:    `"GET /channels/{channelId}/chats/{chatId}/messages?page={page}&pageSize={pageSize}"`
+ * - sendText:    `"POST /channels/{channelId}/messages/text"`
+ * - sendMedia:   `"POST /channels/{channelId}/messages/media"`
+ * - sendButtons: `"POST /channels/{channelId}/messages/buttons"`
+ * - media:       `"GET /channels/{channelId}/media/{messageId}"`
+ * - deleteMsg:   `"DELETE /channels/{channelId}/messages/{messageId}"`
+ */
+export type GenericServerEndpoints = {
+  status?: string;
+  chats?: string;
+  messages?: string;
+  sendText?: string;
+  sendMedia?: string;
+  sendButtons?: string;
+  media?: string;
+  deleteMsg?: string;
+};
+
 export type DeviceConfig = {
   id: string;
   label?: string;
+  /** Optional icon URL (or data URI) displayed alongside the device name */
+  icon?: string;
   apiUrl: string;
   /** Per-instance token from Evolution API (NOT the global API key) */
   instanceToken: string;
@@ -76,6 +106,8 @@ export type DeviceConfig = {
   prebuiltMessages?: PrebuiltMessage[];
   /** Declare which features the provider backend supports. Defaults to all false for generic-server. */
   capabilities?: Partial<ProviderCapabilities>;
+  /** Custom endpoint map for generic-server provider. Ignored for evolution provider. */
+  endpoints?: GenericServerEndpoints;
 };
 
 export type ChatAction = {
@@ -113,6 +145,8 @@ export type WhatsAppMultiDeviceConfig = {
   chatTags?: ChatTagsResolver;
   /** Preferred over chatTags: resolves all chat tags in a single batch call. */
   chatTagsBulk?: BulkChatTagsResolver;
+  /** Enable the debug panel for development and troubleshooting. */
+  debug?: boolean;
 };
 
 export type Chat = {

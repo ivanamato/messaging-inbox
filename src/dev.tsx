@@ -84,10 +84,14 @@ const devChatActions: ChatActionsResolver = (chat) => {
 };
 
 loadConfig().then((config) => {
+  const params = new URLSearchParams(window.location.search);
+  const debug = params.has('debug');
+
   const inbox = mount(document.getElementById('app')!, {
     ...config,
     chatTags: devChatTags,
     chatActions: devChatActions,
+    debug,
   });
   // Expose the inbox API for E2E testing and development convenience
   (window as unknown as Record<string, unknown>).__whatsappInbox = inbox;
@@ -127,6 +131,12 @@ loadConfig().then((config) => {
   s1.appendChild(btn('Carlos Eduardo (device 1)', () => inbox.selectConversation('5511987654321', undefined, 'mock-device-1')));
   s1.appendChild(btn('Sarah Johnson (device 2)', () => inbox.selectConversation('15551234567', undefined, 'mock-device-2')));
   s1.appendChild(btn('James Wright (device 2)', () => inbox.selectConversation('447911123456', undefined, 'mock-device-2')));
+
+  // ── Section: Generic server (custom endpoints) ────────────────────────
+  const sg = section('Generic custom endpoints');
+  sg.appendChild(btn('Emma Wilson (device 4)', () => inbox.selectConversation('emma-wilson', undefined, 'mock-device-4'), '#7c3aed'));
+  sg.appendChild(btn('David Kim (device 4)', () => inbox.selectConversation('david-kim', undefined, 'mock-device-4'), '#7c3aed'));
+  sg.appendChild(btn('Support Team (device 4)', () => inbox.selectConversation('support-team', undefined, 'mock-device-4'), '#7c3aed'));
 
   // ── Section: Open with prefill ──────────────────────────────────────────
   const s2 = section('Open with prefill');

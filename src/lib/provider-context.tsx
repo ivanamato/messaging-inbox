@@ -1,28 +1,33 @@
 import { createContext, useContext, useMemo, useState, useCallback, type PropsWithChildren } from 'react';
 import { EvolutionProvider } from './providers/evolution';
 import { GenericServerProvider } from './providers/generic-server';
-import type { MessagingProvider, ProviderType, ProviderCapabilities, DeviceConfig, WhatsAppMultiDeviceConfig, ViewMode } from './providers/types';
+import type { MessagingProvider, DeviceConfig, WhatsAppMultiDeviceConfig, ViewMode } from './providers/types';
 import { TranslationsProvider } from './i18n';
+import { DebugStore, DebugProviderProxy, DebugProvider } from './debug';
 
 // --- Provider registry: one provider per unique device (keyed by device.id to avoid token exposure) ---
 
-function createProviderInstance(type: ProviderType, apiUrl: string, instanceToken: string, capabilities?: Partial<ProviderCapabilities>): MessagingProvider {
+function createProviderInstance(device: DeviceConfig): MessagingProvider {
+  const type = device.providerType || 'evolution';
   if (type === 'evolution') {
-    return new EvolutionProvider(apiUrl, instanceToken);
+    return new EvolutionProvider(device.apiUrl, device.instanceToken);
   }
   if (type === 'generic-server') {
-    return new GenericServerProvider(apiUrl, instanceToken, capabilities);
+    return new GenericServerProvider(device.apiUrl, device.instanceToken, device.capabilities, device.endpoints);
   }
   throw new Error(`Unknown provider type: ${type}`);
 }
 
-function buildProviderRegistry(devices: DeviceConfig[]): Map<string, MessagingProvider> {
+function buildProviderRegistry(devices: DeviceConfig[], debugStore?: DebugStore): Map<string, MessagingProvider> {
   const registry = new Map<string, MessagingProvider>();
   for (const device of devices) {
-    const type = device.providerType || 'evolution';
-    const key = `${device.id}|${type}`;
+    const key = `${device.id}|${device.providerType || 'evolution'}`;
     if (!registry.has(key)) {
-      registry.set(key, createProviderInstance(type, device.apiUrl, device.instanceToken, device.capabilities));
+      let provider = createProviderInstance(device);
+      if (debugStore) {
+        provider = new DebugProviderProxy(provider, debugStore, device.id);
+      }
+      registry.set(key, provider);
     }
   }
   return registry;
@@ -52,7 +57,12 @@ const ProviderContext = createContext<MessagingProvider | null>(null);
 export function ProviderProvider({ config, children }: PropsWithChildren<{ config: WhatsAppMultiDeviceConfig }>) {
   const { devices } = config;
 
-  const registry = useMemo(() => buildProviderRegistry(devices), [devices]);
+  const debugStore = useMemo(
+    () => config.debug ? new DebugStore() : null,
+    [config.debug],
+  );
+
+  const registry = useMemo(() => buildProviderRegistry(devices, debugStore ?? undefined), [devices, debugStore]);
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(
     config.defaultDeviceId || (devices.length > 0 ? devices[0].id : null)
@@ -93,11 +103,13 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
 
   return (
     <TranslationsProvider translations={config.translations}>
-      <DeviceContext.Provider value={deviceContextValue}>
-        <ProviderContext.Provider value={activeProvider}>
-          {children}
-        </ProviderContext.Provider>
-      </DeviceContext.Provider>
+      <DebugProvider store={debugStore}>
+        <DeviceContext.Provider value={deviceContextValue}>
+          <ProviderContext.Provider value={activeProvider}>
+            {children}
+          </ProviderContext.Provider>
+        </DeviceContext.Provider>
+      </DebugProvider>
     </TranslationsProvider>
   );
 }

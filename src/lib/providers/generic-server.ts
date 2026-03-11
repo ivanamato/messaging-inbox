@@ -10,7 +10,19 @@ import type {
   SendResult,
   FindMessagesOptions,
   PaginatedMessages,
+  GenericServerEndpoints,
 } from './types';
+
+const DEFAULT_ENDPOINTS: Required<GenericServerEndpoints> = {
+  status:      'GET /channels/{channelId}/status',
+  chats:       'GET /channels/{channelId}/chats',
+  messages:    'GET /channels/{channelId}/chats/{chatId}/messages?page={page}&pageSize={pageSize}',
+  sendText:    'POST /channels/{channelId}/messages/text',
+  sendMedia:   'POST /channels/{channelId}/messages/media',
+  sendButtons: 'POST /channels/{channelId}/messages/buttons',
+  media:       'GET /channels/{channelId}/media/{messageId}',
+  deleteMsg:   'DELETE /channels/{channelId}/messages/{messageId}',
+};
 
 const DEFAULT_GENERIC_CAPABILITIES: ProviderCapabilities = {
   templates: false,
@@ -21,22 +33,54 @@ const DEFAULT_GENERIC_CAPABILITIES: ProviderCapabilities = {
   conversationInitiation: { canInitiate: false, identifierType: 'opaque' },
 };
 
+/**
+ * Parse an endpoint string like `"POST /channels/{channelId}/messages/text"`
+ * into `{ method, path }`, interpolating placeholders from `vars`.
+ */
+function resolveEndpoint(
+  template: string,
+  vars: Record<string, string>,
+): { method: string; path: string } {
+  const spaceIdx = template.indexOf(' ');
+  const method = spaceIdx > 0 ? template.slice(0, spaceIdx).toUpperCase() : 'GET';
+  let path = spaceIdx > 0 ? template.slice(spaceIdx + 1) : template;
+
+  path = path.replace(/\{(\w+)\}/g, (_, key: string) => {
+    const val = vars[key];
+    return val !== undefined ? encodeURIComponent(val) : `{${key}}`;
+  });
+
+  return { method, path };
+}
+
 export class GenericServerProvider implements MessagingProvider {
   readonly type = 'generic-server' as const;
   readonly capabilities: ProviderCapabilities;
+  private readonly endpoints: Required<GenericServerEndpoints>;
 
   constructor(
     private readonly baseUrl: string,
     private readonly instanceToken: string,
     capabilitiesOverride?: Partial<ProviderCapabilities>,
+    endpoints?: GenericServerEndpoints,
   ) {
     this.capabilities = { ...DEFAULT_GENERIC_CAPABILITIES, ...capabilitiesOverride };
+    this.endpoints = { ...DEFAULT_ENDPOINTS, ...endpoints };
   }
 
-  private async request<T>(path: string, options?: RequestInit): Promise<T> {
+  private async request<T>(
+    endpointKey: keyof GenericServerEndpoints,
+    vars: Record<string, string>,
+    options?: RequestInit,
+  ): Promise<T> {
+    const template = this.endpoints[endpointKey];
+    const { method: templateMethod, path } = resolveEndpoint(template, vars);
+    const method = options?.method ?? templateMethod;
+
     const url = `${this.baseUrl}${path}`;
     const res = await fetch(url, {
       ...options,
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.instanceToken}`,
@@ -55,13 +99,13 @@ export class GenericServerProvider implements MessagingProvider {
 
   async getConnectionState(channelId: string): Promise<'open' | 'close' | 'connecting'> {
     const data = await this.request<{ state: 'open' | 'close' | 'connecting' }>(
-      `/channels/${encodeURIComponent(channelId)}/status`
+      'status', { channelId },
     );
     return data.state;
   }
 
   async findChats(channelId: string): Promise<Chat[]> {
-    return this.request<Chat[]>(`/channels/${encodeURIComponent(channelId)}/chats`);
+    return this.request<Chat[]>('chats', { channelId });
   }
 
   async findMessages(channelId: string, chatId: string, limit = 50): Promise<Message[]> {
@@ -76,35 +120,36 @@ export class GenericServerProvider implements MessagingProvider {
   ): Promise<PaginatedMessages> {
     const { page = 1, pageSize = 50 } = options;
     return this.request<PaginatedMessages>(
-      `/channels/${encodeURIComponent(channelId)}/chats/${encodeURIComponent(chatId)}/messages?page=${page}&pageSize=${pageSize}`
+      'messages',
+      { channelId, chatId, page: String(page), pageSize: String(pageSize) },
     );
   }
 
   async sendText(channelId: string, params: SendTextParams): Promise<SendResult> {
     return this.request<SendResult>(
-      `/channels/${encodeURIComponent(channelId)}/messages/text`,
-      { method: 'POST', body: JSON.stringify(params) }
+      'sendText', { channelId },
+      { body: JSON.stringify(params) },
     );
   }
 
   async sendMedia(channelId: string, params: SendMediaParams): Promise<SendResult> {
     return this.request<SendResult>(
-      `/channels/${encodeURIComponent(channelId)}/messages/media`,
-      { method: 'POST', body: JSON.stringify(params) }
+      'sendMedia', { channelId },
+      { body: JSON.stringify(params) },
     );
   }
 
   async sendButtons(channelId: string, params: SendButtonsParams): Promise<SendResult> {
     return this.request<SendResult>(
-      `/channels/${encodeURIComponent(channelId)}/messages/buttons`,
-      { method: 'POST', body: JSON.stringify(params) }
+      'sendButtons', { channelId },
+      { body: JSON.stringify(params) },
     );
   }
 
   async getMediaUrl(channelId: string, messageId: string): Promise<string | null> {
     try {
       const data = await this.request<{ url: string }>(
-        `/channels/${encodeURIComponent(channelId)}/media/${encodeURIComponent(messageId)}`
+        'media', { channelId, messageId },
       );
       return data.url || null;
     } catch {
@@ -114,11 +159,8 @@ export class GenericServerProvider implements MessagingProvider {
 
   async deleteMessage(channelId: string, params: DeleteMessageParams): Promise<void> {
     await this.request(
-      `/channels/${encodeURIComponent(channelId)}/messages/${encodeURIComponent(params.messageId)}`,
-      {
-        method: 'DELETE',
-        body: params.metadata ? JSON.stringify({ metadata: params.metadata }) : undefined,
-      }
+      'deleteMsg', { channelId, messageId: params.messageId },
+      { body: params.metadata ? JSON.stringify({ metadata: params.metadata }) : undefined },
     );
   }
 }

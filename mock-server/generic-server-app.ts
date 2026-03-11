@@ -237,3 +237,143 @@ genericApp.delete('/channels/:channelId/messages/:messageId', (c) => {
   getDeleted(instance!).add(messageId);
   return new Response(null, { status: 204 });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Custom endpoint routes (/api/v2/...) — demonstrates the endpoint map feature.
+// These serve the same data as the default routes above, under different paths.
+// The GENERIC_CUSTOM instance in devices.json uses an `endpoints` config that
+// maps to these paths.
+// ══════════════════════════════════════════════════════════════════════════════
+
+genericApp.get('/api/v2/:channelId/health', (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  if (!instance || instance !== channelId || !genericFixturesByInstance[instance]) {
+    return c.json({ error: 'Channel not found' }, 404);
+  }
+  return c.json({ state: 'open' });
+});
+
+genericApp.get('/api/v2/:channelId/conversations', (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  const deleted = getDeleted(instance!);
+  const chats = fixtures.chats.map((chat) => {
+    const sent = getSent(instance!, chat.id).filter((m) => !deleted.has(m.id));
+    if (sent.length === 0) return chat;
+    const latest = sent[sent.length - 1];
+    return {
+      ...chat,
+      lastMessage: { content: latest.content, direction: latest.direction as 'inbound' | 'outbound', type: latest.messageType },
+      lastActiveAt: latest.createdAt,
+      unreadCount: 0,
+    };
+  });
+  return c.json(chats);
+});
+
+genericApp.get('/api/v2/:channelId/conversations/:chatId/history', (c) => {
+  const channelId = c.req.param('channelId');
+  const chatId = c.req.param('chatId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  const page = Math.max(1, parseInt(c.req.query('p') ?? '1', 10));
+  const pageSize = Math.max(1, parseInt(c.req.query('limit') ?? '50', 10));
+
+  const deleted = getDeleted(instance!);
+  const fixture = (fixtures.messagesByChatId[chatId] ?? []).filter((m) => !deleted.has(m.id));
+  const dynamic = getSent(instance!, chatId).filter((m) => !deleted.has(m.id));
+
+  const seen = new Set<string>();
+  const all: typeof fixture = [];
+  for (const m of [...fixture, ...dynamic]) {
+    if (!seen.has(m.id)) { seen.add(m.id); all.push(m); }
+  }
+  all.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  const total = all.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = (page - 1) * pageSize;
+  const messages = all.slice(start, start + pageSize);
+
+  return c.json({ messages, pagination: { currentPage: page, totalPages, total, hasMore: page < totalPages } });
+});
+
+genericApp.post('/api/v2/:channelId/send/text', async (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  const body = await c.req.json<{ to: string; body: string }>();
+  const messageId = `gen-sent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const msg: NormalizedMessage = {
+    id: messageId, direction: 'outbound', content: body.body,
+    createdAt: new Date().toISOString(), status: 'sent', phoneNumber: body.to,
+    hasMedia: false, messageType: 'text', reactionEmoji: null, reactedToMessageId: null,
+  };
+  getSent(instance!, body.to).push(msg);
+  return c.json({ messageId, status: 'sent' });
+});
+
+genericApp.post('/api/v2/:channelId/send/media', async (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  const body = await c.req.json<{ to: string; mediaType: string; media: string; caption?: string; fileName?: string; mimeType?: string }>();
+  const messageId = `gen-sent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const msg: NormalizedMessage = {
+    id: messageId, direction: 'outbound', content: body.caption || body.fileName || body.mediaType,
+    createdAt: new Date().toISOString(), status: 'sent', phoneNumber: body.to,
+    hasMedia: true, messageType: body.mediaType, caption: body.caption ?? null,
+    filename: body.fileName ?? null, mimeType: body.mimeType ?? null,
+    reactionEmoji: null, reactedToMessageId: null,
+  };
+  getSent(instance!, body.to).push(msg);
+  return c.json({ messageId, status: 'sent' });
+});
+
+genericApp.post('/api/v2/:channelId/send/buttons', async (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  const messageId = `gen-sent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  return c.json({ messageId, status: 'sent' });
+});
+
+genericApp.get('/api/v2/:channelId/attachments/:messageId', (c) => {
+  return c.json({ url: '' }, 404);
+});
+
+genericApp.delete('/api/v2/:channelId/history/:messageId', (c) => {
+  const channelId = c.req.param('channelId');
+  const messageId = c.req.param('messageId');
+  const instance = resolveInstance(c);
+  const fixtures = instance && instance === channelId ? genericFixturesByInstance[instance] : null;
+  if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
+
+  getDeleted(instance!).add(messageId);
+  return new Response(null, { status: 204 });
+});
+
+genericApp.post('/api/v2/:channelId/reset', (c) => {
+  const channelId = c.req.param('channelId');
+  const instance = resolveInstance(c);
+  if (!instance || instance !== channelId || !genericFixturesByInstance[instance]) {
+    return c.json({ error: 'Channel not found' }, 404);
+  }
+  for (const key of sentMessages.keys()) {
+    if (key.startsWith(`${instance}:`)) sentMessages.delete(key);
+  }
+  deletedIds.delete(instance);
+  return new Response(null, { status: 204 });
+});

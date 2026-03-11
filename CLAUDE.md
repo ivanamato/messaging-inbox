@@ -174,6 +174,31 @@ Auto-reply uses the real contact name from fixtures or store. For group chats, a
 - **`MOCK1`** — Brazilian contacts: Ana Beatriz, Carlos Eduardo (with @lid pair), Equipe Vendas 🚀 (group), Fernanda Lima, Roberto Mendes
 - **`MOCK2`** — International contacts: Sarah Johnson, James Wright, Product Team 💡 (group), Miguel Torres
 
+## Generic Server Mock
+
+`mock-server/generic-server-app.ts` implements the `generic-server` provider contract. Serves normalized types directly (no Evolution API translation). Runs on port 3003.
+
+See **[docs/generic-server.md](docs/generic-server.md)** for the full endpoint contract, data shapes, and integration guide.
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `mock-server/generic-server-index.ts` | Entry point (`GENERIC_PORT`, default 3003) |
+| `mock-server/generic-server-app.ts` | All routes (default + custom `/api/v2/` paths) |
+| `mock-server/generic-fixtures.ts` | Fixture data for GENERIC1 and GENERIC_CUSTOM |
+
+### Instances
+
+| Token | Instance | Contacts | Endpoint style |
+|---|---|---|---|
+| `generic-token-789` | `GENERIC1` | Alice Martin, Bob Chen | Default (`/channels/...`) |
+| `generic-token-custom` | `GENERIC_CUSTOM` | Emma Wilson, David Kim, Support Team | Custom (`/api/v2/...`) |
+
+### Custom Endpoints
+
+The `GenericServerEndpoints` type on `DeviceConfig.endpoints` lets consumers remap every URL. Each value is `"METHOD /path/{placeholder}"`. Placeholders: `{channelId}`, `{chatId}`, `{messageId}`, `{page}`, `{pageSize}`. Omitted keys use defaults. See `devices.json` device `mock-device-4` for a working example.
+
 ### Docker
 
 ```yaml
@@ -258,6 +283,7 @@ When running the dev server (`make docker` or `make mock`), a 260px sidebar appe
 
 **Current sections:**
 - *Open conversation* — one button per contact (MOCK1 + MOCK2), calls `inbox.selectConversation(phone, undefined, deviceId)`
+- *Generic custom endpoints* — purple buttons for GENERIC_CUSTOM contacts (device 4), demonstrates custom endpoint routing
 - *Open with prefill* — blue buttons calling `inbox.selectConversation(phone, prefillText, deviceId)`
 
 **To add a new section**, append `section()` + `btn()` calls after the existing ones in `dev.tsx`. The sidebar is scrollable so sections can grow freely.
@@ -271,28 +297,14 @@ __whatsappInbox.selectConversation('556992924255', 'Hello!', 'mock-device-1')
 
 `devices.json` is read by the Vite dev server middleware (`serveDevicesJson` in `vite.config.ts`) and served to the browser at `/devices.json`. The middleware only serves the file to loopback connections (`127.0.0.1`, `::1`) to prevent token leakage when the dev server is exposed on a network.
 
-The current `devices.json` is pre-configured for the mock server:
+The current `devices.json` is pre-configured for the mock servers:
 
-```json
-{
-  "devices": [
-    {
-      "id": "mock-device-1",
-      "label": "Mock WhatsApp 1",
-      "apiUrl": "http://localhost:3002",
-      "instanceToken": "mock-token-123",
-      "instanceName": "MOCK1"
-    },
-    {
-      "id": "mock-device-2",
-      "label": "Mock WhatsApp 2",
-      "apiUrl": "http://localhost:3002",
-      "instanceToken": "mock-token-456",
-      "instanceName": "MOCK2"
-    }
-  ]
-}
-```
+| Device | Provider | Port | Instance | Notes |
+|---|---|---|---|---|
+| `mock-device-1` | evolution | 3002 | MOCK1 | Brazilian contacts |
+| `mock-device-2` | evolution | 3002 | MOCK2 | International contacts |
+| `mock-device-3` | generic-server | 3003 | GENERIC1 | Default endpoints |
+| `mock-device-4` | generic-server | 3003 | GENERIC_CUSTOM | Custom `/api/v2/` endpoints |
 
 To switch to a real Evolution API, replace `devices.json` with real credentials. The loopback guard in `serveDevicesJson` still applies — tokens are never served to non-localhost clients.
 

@@ -3,6 +3,7 @@ import { ConversationList, type ConversationListRef } from '@/components/convers
 import { MessageView } from '@/components/message-view';
 import { InstanceSelector } from '@/components/instance-selector';
 import { ConnectionStatus } from '@/components/connection-status';
+import { DebugPanel } from '@/components/debug-panel/debug-panel';
 import { useDeviceContext } from '@/lib/provider-context';
 import { useAppState } from '@/use-cases/use-app-state';
 import type { ChatActionsResolver, ChatTagsResolver, BulkChatTagsResolver, PrebuiltMessage } from '@/lib/providers/types';
@@ -41,7 +42,7 @@ export function App({ conversationListRef: externalRef, chatActions, chatTags, c
   );
 
   return (
-    <div className="wa:h-full wa:flex wa:flex-col wa:bg-[#d1d7db]">
+    <div className="wa:h-full wa:flex wa:flex-col wa:bg-[#d1d7db] wa:relative">
       {/* Teal top bar — the iconic WhatsApp Web color band */}
       <div className="wa:bg-[#00a884] wa:flex-shrink-0" style={{ height: 127 }}>
         <div style={{ padding: '19px 19px 12px' }}>
@@ -91,6 +92,7 @@ export function App({ conversationListRef: externalRef, chatActions, chatTags, c
         />
         </div>
       </div>
+      <DebugPanel />
     </div>
   );
 }
