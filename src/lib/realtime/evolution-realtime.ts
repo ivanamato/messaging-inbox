@@ -83,6 +83,7 @@ export class EvolutionRealtimeConnection implements RealtimeConnection {
   private eventHandlers = new Set<(event: RealtimeEvent) => void>();
   private stateHandlers = new Set<(state: RealtimeConnectionState) => void>();
   private rawLogger: RawWsLogger | null = null;
+  private errorHandlers = new Set<(error: string) => void>();
 
   constructor(
     private readonly wsUrl: string,
@@ -119,9 +120,7 @@ export class EvolutionRealtimeConnection implements RealtimeConnection {
 
     this.socket = io(url, {
       transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
+      reconnection: false,
       auth: { apikey: this.instanceToken },
     });
 
@@ -136,13 +135,23 @@ export class EvolutionRealtimeConnection implements RealtimeConnection {
     });
 
     this.socket.on('connect_error', (err) => {
-      console.error(`[WS] ${this.instanceName} connect_error:`, err.message);
+      const errorMsg = err.message || 'Connection failed';
+      console.error(`[WS] ${this.instanceName} connect_error:`, errorMsg);
       this.emitEvent({
         type: 'connection.changed',
         deviceId: this.deviceId,
         channelId: this.instanceName,
         payload: { state: 'close' },
       });
+      // Fail definitively — disconnect and notify error handlers
+      if (this.socket) {
+        this.socket.disconnect();
+        this.socket = null;
+      }
+      this.setState('disconnected');
+      for (const handler of this.errorHandlers) {
+        try { handler(errorMsg); } catch { /* ignore */ }
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -153,14 +162,6 @@ export class EvolutionRealtimeConnection implements RealtimeConnection {
         channelId: this.instanceName,
         payload: { state: 'close' },
       });
-    });
-
-    this.socket.io.on('reconnect_attempt', () => {
-      this.setState('reconnecting');
-    });
-
-    this.socket.io.on('reconnect', () => {
-      this.setState('connected');
     });
 
     // Capture all raw events for debug logging
@@ -286,6 +287,11 @@ export class EvolutionRealtimeConnection implements RealtimeConnection {
   onStateChange(handler: (state: RealtimeConnectionState) => void): () => void {
     this.stateHandlers.add(handler);
     return () => { this.stateHandlers.delete(handler); };
+  }
+
+  onError(handler: (error: string) => void): () => void {
+    this.errorHandlers.add(handler);
+    return () => { this.errorHandlers.delete(handler); };
   }
 
   getState(): RealtimeConnectionState {

@@ -8,7 +8,9 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private intentionalClose = false;
+  private hasConnected = false;
   private rawLogger: RawWsLogger | null = null;
+  private errorHandlers = new Set<(error: string) => void>();
 
   private static readonly MAX_RECONNECT_DELAY = 30000;
   private static readonly BASE_RECONNECT_DELAY = 1000;
@@ -44,6 +46,7 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
   connect(): void {
     if (this.ws) return;
     this.intentionalClose = false;
+    this.hasConnected = false;
     this.doConnect();
   }
 
@@ -55,6 +58,7 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
+      this.hasConnected = true;
       this.setState('connected');
       this.emitEvent({
         type: 'connection.changed',
@@ -147,19 +151,28 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (ev) => {
       this.ws = null;
       if (this.intentionalClose) {
         this.setState('disconnected');
         return;
       }
-      this.setState('reconnecting');
       this.emitEvent({
         type: 'connection.changed',
         deviceId: this.deviceId,
         channelId: this.channelId,
         payload: { state: 'close' },
       });
+      if (!this.hasConnected) {
+        // Never connected — fail definitively
+        const errorMsg = ev.reason || `WebSocket connection failed (code ${ev.code})`;
+        this.setState('disconnected');
+        for (const handler of this.errorHandlers) {
+          try { handler(errorMsg); } catch { /* ignore */ }
+        }
+        return;
+      }
+      this.setState('reconnecting');
       this.scheduleReconnect();
     };
 
@@ -206,6 +219,11 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
   onStateChange(handler: (state: RealtimeConnectionState) => void): () => void {
     this.stateHandlers.add(handler);
     return () => { this.stateHandlers.delete(handler); };
+  }
+
+  onError(handler: (error: string) => void): () => void {
+    this.errorHandlers.add(handler);
+    return () => { this.errorHandlers.delete(handler); };
   }
 
   getState(): RealtimeConnectionState {

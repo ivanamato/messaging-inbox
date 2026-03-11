@@ -144,6 +144,11 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
             }
           });
 
+          // Error callback
+          conn.onError((error) => {
+            config.onWebSocketError?.(device.id, error);
+          });
+
           // Raw WS logging for debug panel
           if (debugStore && conn.setRawLogger) {
             conn.setRawLogger((eventName, payload) => {
@@ -216,6 +221,10 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
             summary: `[WS] ${state}`,
           });
         }
+      });
+
+      conn.onError((error) => {
+        config.onWebSocketError?.(deviceId, error);
       });
 
       if (debugStore && conn.setRawLogger) {

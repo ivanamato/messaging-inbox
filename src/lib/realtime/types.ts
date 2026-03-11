@@ -30,6 +30,7 @@ export interface RealtimeConnection {
   disconnect(): void;
   onEvent(handler: (event: RealtimeEvent) => void): () => void;
   onStateChange(handler: (state: RealtimeConnectionState) => void): () => void;
+  onError(handler: (error: string) => void): () => void;
   getState(): RealtimeConnectionState;
   setRawLogger?(logger: RawWsLogger): void;
 }

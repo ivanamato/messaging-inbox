@@ -427,9 +427,25 @@ The token is appended as a `?token=` query parameter. Your server should send JS
 #### Behavior
 
 - When WebSocket is connected, polling for chat list and device status is **automatically disabled**
-- If the WebSocket disconnects, polling resumes as a fallback
+- If the WebSocket disconnects after a successful connection, polling resumes as a fallback and reconnection is automatic with exponential backoff (1s to 30s)
+- If the initial WebSocket connection fails (e.g. wrong URL, server down, auth rejected), the connection transitions to `disconnected` immediately instead of retrying silently. Polling resumes as fallback.
 - The connection state is visible in the debug panel (**Devices** tab) with a toggle to enable/disable per device at runtime
-- Reconnection is automatic with exponential backoff (1s to 30s)
+
+#### `config.onWebSocketError` — Connection Error Callback
+
+Called when a WebSocket connection fails. Receives the device ID and the error message as a string. Useful for logging, showing notifications, or disabling WebSocket for specific devices.
+
+```ts
+mount(el, {
+  devices: [...],
+  onWebSocketError: (deviceId: string, error: string) => {
+    console.error(`WebSocket failed for device ${deviceId}: ${error}`);
+    // e.g. show a toast, report to your error tracker, etc.
+  },
+});
+```
+
+The callback fires once per connection failure. To retry, call `setWebSocketEnabled(deviceId, true)` on the inbox instance.
 
 ---
 

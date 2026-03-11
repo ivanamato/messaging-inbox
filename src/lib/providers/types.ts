@@ -158,6 +158,8 @@ export type WhatsAppMultiDeviceConfig = {
   chatTagsBulk?: BulkChatTagsResolver;
   /** Enable the debug panel for development and troubleshooting. */
   debug?: boolean;
+  /** Called when a WebSocket connection fails. Receives the device ID and error message. */
+  onWebSocketError?: (deviceId: string, error: string) => void;
 };
 
 export type Chat = {
