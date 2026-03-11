@@ -6,7 +6,7 @@ Built with [Preact](https://preactjs.com/) + [Tailwind CSS v4](https://tailwindc
 
 ## Features
 
-- **Real-time messaging** — Auto-polling keeps conversations and messages updated
+- **Real-time messaging** — WebSocket support (Socket.IO for Evolution API, native WebSocket for generic-server) with automatic fallback to polling
 - **Multi-device** — Switch between multiple WhatsApp instances via a device selector
 - **Imperative API** — Open conversations, pre-fill the composer, switch devices, send messages, and fetch data from outside the inbox
 - **Conversation pre-selection & pre-fill** — Open a specific conversation programmatically with an optional draft message — ideal for CRM "reply to customer" flows
@@ -21,6 +21,7 @@ Built with [Preact](https://preactjs.com/) + [Tailwind CSS v4](https://tailwindc
 - **Message forwarding** — Forward messages between conversations
 - **Context menu** — Right-click actions (delete, forward) on messages
 - **Read-only mode** — View-only access per device
+- **Debug panel** — Built-in debug overlay with device health, HTTP request logs, WebSocket event viewer, data validation, and timeline
 - **CSS isolation** — All styles use the `wa:` prefix to avoid collisions with host apps
 
 ## Installation
@@ -107,6 +108,10 @@ type DeviceConfig = {
   readonly?: boolean;
   prebuiltMessages?: PrebuiltMessage[];
   capabilities?: Partial<ProviderCapabilities>;
+  websocket?: {
+    enabled: boolean;
+    url?: string;
+  };
 };
 ```
 
@@ -121,6 +126,7 @@ type DeviceConfig = {
 | `readonly` | No | If `true`, hides the composer — agents can read but not send |
 | `prebuiltMessages` | No | Reusable message templates and audio voice notes — see [Pre-built Messages](#configdevicesprebuiltmessages--pre-built-messages) |
 | `capabilities` | No | Feature flags for `generic-server` devices — see [Capabilities](#capabilities--feature-flags) |
+| `websocket` | No | WebSocket configuration — see [WebSocket / Realtime](#websocket--realtime) |
 
 **Minimal example:**
 
@@ -329,6 +335,101 @@ mount(el, {
 - Clicking a tag chip above the list toggles it as a filter
 - When multiple chips are selected, only chats matching **all** selected tags are shown (AND logic)
 - Tags re-resolve automatically on every poll cycle
+
+---
+
+### `config.debug` — Debug panel
+
+Enables a built-in debug overlay at the bottom of the inbox. Useful for development, troubleshooting WebSocket connections, and inspecting API traffic.
+
+```js
+mount(el, {
+  devices: [/* ... */],
+  debug: true,
+});
+```
+
+When enabled, a small bug icon appears in the bottom-right corner. Clicking it opens a panel with these tabs:
+
+| Tab | Description |
+|---|---|
+| **Devices** | Per-device connection status, WebSocket state indicator, WS toggle button, provider type, capabilities |
+| **Requests** | HTTP request log with timing, status codes, and response bodies |
+| **WebSocket** | Raw WebSocket event stream — click any entry to expand the full JSON payload. Filterable by event name or device ID |
+| **Validation** | Data shape validation issues detected in API responses |
+| **Compare** | Side-by-side provider comparison |
+| **Timeline** | Chronological event timeline (connections, messages, errors) |
+
+The panel also has a **Copy log** button that exports all debug data as JSON to the clipboard.
+
+---
+
+### `config.devices[].websocket` — WebSocket / Realtime
+
+Enables real-time updates via WebSocket instead of polling. When connected, the inbox receives new messages, status updates, and chat changes instantly without repeated HTTP requests.
+
+```ts
+websocket?: {
+  enabled: boolean;  // Set to true to connect on mount
+  url?: string;      // WebSocket URL template (optional — a default is derived from apiUrl)
+};
+```
+
+#### Evolution API
+
+Uses [Socket.IO](https://socket.io/) to connect to the Evolution API's WebSocket server. The URL template supports `{instanceName}` as a placeholder.
+
+```js
+mount(el, {
+  devices: [
+    {
+      id: 'main',
+      apiUrl: 'https://your-evolution-api.com',
+      instanceToken: 'your-instance-token',
+      instanceName: 'your-instance',
+      websocket: {
+        enabled: true,
+        url: 'wss://your-evolution-api.com/{instanceName}',
+      },
+    },
+  ],
+});
+```
+
+If `url` is omitted, it defaults to `wss://<apiUrl-host>/{instanceName}` (derived from `apiUrl` by replacing `http` with `ws`).
+
+The instance token is sent as `auth.apikey` in the Socket.IO handshake. Events handled: `messages.upsert`, `messages.update`, `messages.delete`, `chats.upsert`, `chats.update`, `connection.update`.
+
+#### Generic Server
+
+Uses a native WebSocket connection. The URL template supports `{channelId}` as a placeholder.
+
+```js
+mount(el, {
+  devices: [
+    {
+      id: 'generic',
+      providerType: 'generic-server',
+      apiUrl: 'https://api.yourcompany.com',
+      instanceToken: 'your-token',
+      instanceName: 'channel-1',
+      websocket: {
+        enabled: true,
+        url: 'wss://api.yourcompany.com/ws/channels/{channelId}',
+      },
+    },
+  ],
+});
+```
+
+The token is appended as a `?token=` query parameter. Your server should send JSON messages with `type` matching the realtime event types: `message.new`, `message.updated`, `message.deleted`, `chat.updated`, `chat.new`, `connection.changed`.
+
+#### Behavior
+
+- When WebSocket is connected, polling for chat list and device status is **automatically disabled**
+- If the WebSocket disconnects, polling resumes as a fallback
+- The connection state is visible in the debug panel (**Devices** tab) with a toggle to enable/disable per device at runtime
+- Reconnection is automatic with exponential backoff (1s to 30s)
 
 ---
 
@@ -1227,9 +1328,22 @@ src/
       evolution.ts          # Evolution API v2 implementation (browser fetch)
       generic-server.ts     # Generic normalized REST implementation (any backend)
       index.ts              # createProvider() factory
-    provider-context.tsx    # Preact context for multi-device state
+    provider-context.tsx    # Preact context for multi-device state + realtime wiring
+    realtime/
+      types.ts              # RealtimeConnection interface, RealtimeEvent types
+      evolution-realtime.ts # Socket.IO connection for Evolution API
+      generic-server-realtime.ts # Native WebSocket for generic-server
+      event-bus.ts          # Pub/sub event bus for realtime events
+    debug/
+      debug-store.ts        # Debug data store (requests, events, WS logs)
+      debug-provider-proxy.ts # Transparent proxy that logs all provider calls
+  components/
+    debug-panel/
+      debug-panel.tsx       # Tabbed debug overlay (Devices, Requests, WebSocket, etc.)
+      sections/ws-logs.tsx  # Raw WebSocket event viewer with filtering
   hooks/
     use-auto-polling.ts     # Polling hook with tab-visibility detection
+    use-realtime-events.ts  # Subscribe to filtered realtime events
   use-cases/
     use-app-state.ts        # Top-level app state (selected conversation, device)
     use-chat-list.ts        # Chat list fetching and polling
@@ -1240,6 +1354,8 @@ mock-server/
   app.ts                    # Hono router — all Evolution API routes
   fixtures.ts               # Per-instance fixture data (MOCK1, MOCK2)
   store.ts                  # In-memory state (sent messages, media, contacts, unread)
+  ws.ts                     # Socket.IO WebSocket server for Evolution mock
+  generic-ws.ts             # Native WebSocket server for generic-server mock
   generic-server-index.ts   # Entry point for generic server (GENERIC_PORT, default 3003)
   generic-server-app.ts     # Hono router — generic normalized REST API (/channels/...)
   generic-fixtures.ts       # Normalized fixture data (GENERIC1)
@@ -1252,6 +1368,7 @@ mock-server/
 - **Provider system** — Two built-in providers: `EvolutionProvider` (Evolution API v2, direct) and `GenericServerProvider` (normalized REST, any backend). Implement the `MessagingProvider` interface to add more.
 - **Preact with compat** — Uses Preact with `preact/compat` so React-ecosystem libraries work unchanged.
 - **CSS isolation** — Tailwind v4 with `wa:` prefix (e.g. `wa:flex`, `wa:p-4`). CSS variables namespaced as `--wa-*`.
+- **WebSocket with polling fallback** — When `websocket.enabled` is `true`, a realtime connection is established and polling is automatically disabled. If the connection drops, polling resumes. The debug panel shows connection state and raw events.
 - **Optimistic sends** — Messages appear immediately in the thread with a pending status; the chat list refreshes after the send resolves.
 - **Chat list reactivity** — `ConversationList` exposes a `refresh()` ref method called after sending, template sends, and on mount.
 
