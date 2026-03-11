@@ -36,7 +36,10 @@ export type TimelineEventType =
   | 'message_received'
   | 'error'
   | 'optimistic_confirm'
-  | 'provider_call';
+  | 'provider_call'
+  | 'ws_connected'
+  | 'ws_disconnected'
+  | 'ws_event';
 
 export type TimelineEvent = {
   id: string;
@@ -55,11 +58,22 @@ export type ValidationIssue = {
   details?: unknown;
 };
 
+export type WsLogEntry = {
+  id: string;
+  timestamp: number;
+  deviceId: string;
+  eventName: string;
+  direction: 'in' | 'out';
+  payload?: unknown;
+};
+
 type AddRequestInput = Omit<RequestLogEntry, 'id' | 'timestamp'>;
 type AddEventInput = Omit<TimelineEvent, 'id' | 'timestamp'>;
+type AddWsLogInput = Omit<WsLogEntry, 'id' | 'timestamp'>;
 
 const MAX_REQUESTS = 500;
 const MAX_EVENTS = 1000;
+const MAX_WS_LOGS = 500;
 
 let idCounter = 0;
 function nextId(): string {
@@ -69,8 +83,9 @@ function nextId(): string {
 export class DebugStore {
   private _requests: RequestLogEntry[] = [];
   private _events: TimelineEvent[] = [];
+  private _wsLogs: WsLogEntry[] = [];
   private _listeners = new Set<() => void>();
-  private _snapshot = { requests: this._requests, events: this._events };
+  private _snapshot = { requests: this._requests, events: this._events, wsLogs: this._wsLogs };
   private _lastConnectionStates = new Map<string, string>();
 
   addRequest(input: AddRequestInput) {
@@ -90,6 +105,16 @@ export class DebugStore {
       timestamp: Date.now(),
     };
     this._events = [event, ...this._events].slice(0, MAX_EVENTS);
+    this._notify();
+  }
+
+  addWsLog(input: AddWsLogInput) {
+    const entry: WsLogEntry = {
+      ...input,
+      id: nextId(),
+      timestamp: Date.now(),
+    };
+    this._wsLogs = [entry, ...this._wsLogs].slice(0, MAX_WS_LOGS);
     this._notify();
   }
 
@@ -125,11 +150,12 @@ export class DebugStore {
       exportedAt: new Date().toISOString(),
       requests: this._requests,
       events: this._events,
+      wsLogs: this._wsLogs,
     }, null, 2);
   }
 
   private _notify() {
-    this._snapshot = { requests: this._requests, events: this._events };
+    this._snapshot = { requests: this._requests, events: this._events, wsLogs: this._wsLogs };
     this._listeners.forEach(fn => fn());
   }
 }

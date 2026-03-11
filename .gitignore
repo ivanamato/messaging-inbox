@@ -1,5 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+justfile
+
 # dependencies
 /node_modules
 /.pnp
@@ -51,6 +53,9 @@ devices.json
 
 # vercel
 .vercel
+
+# Vue 3 private example app (local dev only)
+examples/vue3-private-example/
 
 # typescript
 *.tsbuildinfo

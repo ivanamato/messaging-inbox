@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useProvider, useDeviceContext } from '@/lib/provider-context';
 import { useAutoPolling } from '@/hooks/use-auto-polling';
+import { useRealtimeEvents } from '@/hooks/use-realtime-events';
 import type { ChatTagsResolver, BulkChatTagsResolver, BulkChatTagsEntry, ChatTag } from '@/lib/providers/types';
 import type { Conversation } from './types';
 
@@ -12,7 +13,7 @@ type Props = {
 
 export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
   const provider = useProvider();
-  const { viewMode, devices, getProviderForDevice, selectedDevice } = useDeviceContext();
+  const { viewMode, devices, getProviderForDevice, selectedDevice, eventBus, realtimeStates } = useDeviceContext();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -124,11 +125,75 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
     }
   }, [viewMode, instance, doFetch]);
 
+  // Determine if all active devices are WS-connected (so we can skip polling)
+  const wsConnectedForActive = useMemo(() => {
+    if (viewMode === 'all') {
+      return devices.every(d => realtimeStates[d.id] === 'connected');
+    }
+    if (selectedDevice) {
+      return realtimeStates[selectedDevice.id] === 'connected';
+    }
+    return false;
+  }, [viewMode, devices, selectedDevice, realtimeStates]);
+
   const { isPolling } = useAutoPolling({
     interval: 10000,
-    enabled: viewMode === 'all' || !!instance,
+    enabled: (viewMode === 'all' || !!instance) && !wsConnectedForActive,
     onPoll: fetchConversations,
   });
+
+  // Realtime: subscribe to chat events and do an incremental merge
+  useRealtimeEvents(eventBus, { type: ['chat.updated', 'chat.new', 'message.new'] }, useCallback((event) => {
+    if (event.type === 'message.new') {
+      const { chatId, message } = event.payload;
+      setConversations(prev => {
+        const idx = prev.findIndex(c =>
+          c.id === chatId || c.phoneNumber === message.phoneNumber,
+        );
+        if (idx < 0) return prev; // Unknown chat — full refresh will pick it up
+        const updated = [...prev];
+        const conv = { ...updated[idx] };
+        conv.lastActiveAt = message.createdAt;
+        conv.lastMessage = { content: message.content, direction: message.direction, type: message.messageType };
+        if (message.direction === 'inbound') {
+          conv.unreadCount = (conv.unreadCount ?? 0) + 1;
+        }
+        updated[idx] = conv;
+        // Re-sort by recency
+        updated.sort((a, b) => {
+          if (!a.lastActiveAt) return 1;
+          if (!b.lastActiveAt) return -1;
+          return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
+        });
+        return updated;
+      });
+    } else if (event.type === 'chat.updated') {
+      const { chat } = event.payload;
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === chat.id);
+        if (idx < 0) return prev;
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], ...chat };
+        return updated;
+      });
+    } else if (event.type === 'chat.new') {
+      const { chat } = event.payload;
+      setConversations(prev => {
+        if (prev.some(c => c.id === chat.id)) return prev;
+        return [{
+          id: chat.id,
+          phoneNumber: chat.phoneNumber,
+          status: 'active',
+          lastActiveAt: chat.lastActiveAt || '',
+          contactName: chat.contactName,
+          profilePicUrl: chat.profilePicUrl,
+          lastMessage: chat.lastMessage,
+          unreadCount: chat.unreadCount,
+          deviceId: event.deviceId,
+        }, ...prev];
+      });
+    }
+  }, []));
 
   // Tag resolution — uses bulk resolver when available, falls back to per-item.
   useEffect(() => {

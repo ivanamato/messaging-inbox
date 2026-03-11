@@ -13,6 +13,7 @@ export function useAutoPolling({ interval = 5000, enabled = true, onPoll, fireIm
   const [isPaused, setIsPaused] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRunningRef = useRef(false);
+  const stoppedRef = useRef(false);
   const consecutiveErrorsRef = useRef(0);
   const onPollRef = useRef(onPoll);
   const MAX_BACKOFF_MS = 60000;
@@ -21,6 +22,7 @@ export function useAutoPolling({ interval = 5000, enabled = true, onPoll, fireIm
   onPollRef.current = onPoll;
 
   const stopPolling = useCallback(() => {
+    stoppedRef.current = true;
     if (intervalRef.current) {
       clearTimeout(intervalRef.current);
       intervalRef.current = null;
@@ -31,6 +33,7 @@ export function useAutoPolling({ interval = 5000, enabled = true, onPoll, fireIm
   const startPolling = useCallback(() => {
     if (!enabled) return;
 
+    stoppedRef.current = false;
     setIsPolling(true);
     consecutiveErrorsRef.current = 0;
 
@@ -51,20 +54,23 @@ export function useAutoPolling({ interval = 5000, enabled = true, onPoll, fireIm
     };
 
     const scheduleNext = () => {
+      if (stoppedRef.current) return;
       const backoff = Math.min(
         interval * Math.pow(2, consecutiveErrorsRef.current),
         MAX_BACKOFF_MS,
       );
       intervalRef.current = setTimeout(async () => {
         await poll();
-        if (intervalRef.current !== null) {
+        if (!stoppedRef.current && intervalRef.current !== null) {
           scheduleNext();
         }
       }, backoff);
     };
 
     if (fireImmediately) {
-      poll().then(() => scheduleNext());
+      poll().then(() => {
+        if (!stoppedRef.current) scheduleNext();
+      });
     } else {
       scheduleNext();
     }

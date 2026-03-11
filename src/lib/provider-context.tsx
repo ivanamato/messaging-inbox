@@ -1,6 +1,9 @@
-import { createContext, useContext, useMemo, useState, useCallback, type PropsWithChildren } from 'react';
+import { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef, type PropsWithChildren } from 'react';
 import { EvolutionProvider } from './providers/evolution';
 import { GenericServerProvider } from './providers/generic-server';
+import { createRealtimeConnection } from './providers/index';
+import { RealtimeEventBus } from './realtime/event-bus';
+import type { RealtimeConnection, RealtimeConnectionState } from './realtime/types';
 import type { MessagingProvider, DeviceConfig, WhatsAppMultiDeviceConfig, ViewMode } from './providers/types';
 import { TranslationsProvider } from './i18n';
 import { DebugStore, DebugProviderProxy, DebugProvider } from './debug';
@@ -10,7 +13,7 @@ import { DebugStore, DebugProviderProxy, DebugProvider } from './debug';
 function createProviderInstance(device: DeviceConfig): MessagingProvider {
   const type = device.providerType || 'evolution';
   if (type === 'evolution') {
-    return new EvolutionProvider(device.apiUrl, device.instanceToken);
+    return new EvolutionProvider(device.apiUrl, device.instanceToken, device.capabilities);
   }
   if (type === 'generic-server') {
     return new GenericServerProvider(device.apiUrl, device.instanceToken, device.capabilities, device.endpoints);
@@ -49,6 +52,9 @@ export type DeviceContextValue = {
   readonly: boolean;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  eventBus: RealtimeEventBus | null;
+  realtimeStates: Record<string, RealtimeConnectionState>;
+  setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
 };
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
@@ -91,6 +97,155 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
 
   const isReadonly = selectedDevice?.readonly ?? false;
 
+  // --- Realtime (WebSocket) ---
+
+  const eventBusRef = useRef<RealtimeEventBus | null>(null);
+  if (!eventBusRef.current) {
+    eventBusRef.current = new RealtimeEventBus();
+  }
+  const eventBus = eventBusRef.current;
+
+  const connectionsRef = useRef<Map<string, RealtimeConnection>>(new Map());
+  const [realtimeStates, setRealtimeStates] = useState<Record<string, RealtimeConnectionState>>({});
+
+  // Initialize connections for devices with websocket.enabled
+  useEffect(() => {
+    const connections = connectionsRef.current;
+    const activeDeviceIds = new Set<string>();
+
+    for (const device of devices) {
+      if (device.websocket?.enabled) {
+        activeDeviceIds.add(device.id);
+        if (!connections.has(device.id)) {
+          const conn = createRealtimeConnection(device);
+
+          // Forward events to event bus
+          conn.onEvent((event) => {
+            eventBus.emit(event);
+            if (debugStore) {
+              debugStore.addEvent({
+                type: 'message_received',
+                deviceId: event.deviceId,
+                summary: `[WS] ${event.type}`,
+                details: event,
+              });
+            }
+          });
+
+          // Track connection state
+          conn.onStateChange((state) => {
+            setRealtimeStates(prev => ({ ...prev, [device.id]: state }));
+            if (debugStore) {
+              debugStore.addEvent({
+                type: 'connection_change',
+                deviceId: device.id,
+                summary: `[WS] ${state}`,
+              });
+            }
+          });
+
+          // Raw WS logging for debug panel
+          if (debugStore && conn.setRawLogger) {
+            conn.setRawLogger((eventName, payload) => {
+              debugStore.addWsLog({
+                deviceId: device.id,
+                eventName,
+                direction: 'in',
+                payload,
+              });
+            });
+          }
+
+          conn.connect();
+          connections.set(device.id, conn);
+          setRealtimeStates(prev => ({ ...prev, [device.id]: conn.getState() }));
+        }
+      }
+    }
+
+    // Disconnect connections for devices that are no longer active
+    for (const [deviceId, conn] of connections) {
+      if (!activeDeviceIds.has(deviceId)) {
+        conn.disconnect();
+        connections.delete(deviceId);
+        setRealtimeStates(prev => {
+          const next = { ...prev };
+          delete next[deviceId];
+          return next;
+        });
+      }
+    }
+
+    return () => {
+      // Cleanup all connections on unmount
+      for (const [, conn] of connections) {
+        conn.disconnect();
+      }
+      connections.clear();
+    };
+  }, [devices, eventBus, debugStore]);
+
+  const setWebSocketEnabled = useCallback((deviceId: string, enabled: boolean) => {
+    const connections = connectionsRef.current;
+    const device = devices.find(d => d.id === deviceId);
+
+    if (enabled) {
+      if (!device) return;
+      if (connections.has(deviceId)) return; // already connected
+
+      const conn = createRealtimeConnection(device);
+
+      conn.onEvent((event) => {
+        eventBus.emit(event);
+        if (debugStore) {
+          debugStore.addEvent({
+            type: 'message_received',
+            deviceId: event.deviceId,
+            summary: `[WS] ${event.type}`,
+            details: event,
+          });
+        }
+      });
+
+      conn.onStateChange((state) => {
+        setRealtimeStates(prev => ({ ...prev, [deviceId]: state }));
+        if (debugStore) {
+          debugStore.addEvent({
+            type: 'connection_change',
+            deviceId,
+            summary: `[WS] ${state}`,
+          });
+        }
+      });
+
+      if (debugStore && conn.setRawLogger) {
+        conn.setRawLogger((eventName, payload) => {
+          debugStore.addWsLog({
+            deviceId,
+            eventName,
+            direction: 'in',
+            payload,
+          });
+        });
+      }
+
+      conn.connect();
+      connections.set(deviceId, conn);
+      setRealtimeStates(prev => ({ ...prev, [deviceId]: conn.getState() }));
+    } else {
+      const conn = connections.get(deviceId);
+      if (conn) {
+        conn.disconnect();
+        connections.delete(deviceId);
+        setRealtimeStates(prev => {
+          const next = { ...prev };
+          delete next[deviceId];
+          return next;
+        });
+      }
+    }
+  }, [devices, eventBus, debugStore]);
+
   const deviceContextValue = useMemo<DeviceContextValue>(() => ({
     devices,
     selectedDevice,
@@ -99,7 +254,10 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
     readonly: isReadonly,
     viewMode,
     setViewMode,
-  }), [devices, selectedDevice, selectDevice, getProviderForDeviceFn, isReadonly, viewMode]);
+    eventBus,
+    realtimeStates,
+    setWebSocketEnabled,
+  }), [devices, selectedDevice, selectDevice, getProviderForDeviceFn, isReadonly, viewMode, eventBus, realtimeStates, setWebSocketEnabled]);
 
   return (
     <TranslationsProvider translations={config.translations}>

@@ -11,21 +11,19 @@ import type {
   FindMessagesOptions,
   PaginatedMessages,
 } from './types';
+import {
+  stripJid,
+  epochToIso,
+  resolveStatusFromUpdates,
+  extractLastMessageContent,
+  extractContent,
+  type EvolutionChatLastMessage,
+  type EvolutionMessage,
+  type EvolutionMessageKey,
+  type MessageUpdateEntry,
+} from './evolution-helpers';
 
 // -- API response types (matched to actual Evolution API v2 responses) --
-
-type EvolutionChatLastMessage = {
-  key: {
-    id: string;
-    fromMe: boolean;
-    remoteJid: string;
-    remoteJidAlt?: string;
-  };
-  pushName?: string;
-  messageType?: string;
-  message?: Record<string, unknown>;
-  messageTimestamp?: number;
-};
 
 type EvolutionChat = {
   id: string;
@@ -44,412 +42,21 @@ type EvolutionContact = {
   profilePicUrl?: string | null;
 };
 
-type EvolutionMessageKey = {
-  remoteJid: string;
-  fromMe: boolean;
-  id: string;
-  participant?: string;
-};
-
-type MessageUpdateEntry = {
-  status: string; // "SERVER_ACK", "DELIVERY_ACK", "READ", "PLAYED", "ERROR"
-};
-
-type EvolutionMessage = {
-  id?: string;
-  key: EvolutionMessageKey;
-  pushName?: string;
-  messageType?: string;
-  messageTimestamp?: number;
-  status?: number;
-  source?: string;
-  MessageUpdate?: MessageUpdateEntry[];
-  message?: {
-    conversation?: string;
-    extendedTextMessage?: { text?: string };
-    imageMessage?: {
-      url?: string;
-      mimetype?: string;
-      caption?: string;
-      fileName?: string;
-      fileLength?: string | number;
-      mediaKey?: string;
-      directPath?: string;
-    };
-    videoMessage?: {
-      url?: string;
-      mimetype?: string;
-      caption?: string;
-      fileName?: string;
-      fileLength?: string | number;
-      seconds?: number;
-    };
-    audioMessage?: {
-      url?: string;
-      mimetype?: string;
-      fileName?: string;
-      fileLength?: string | number;
-      seconds?: number;
-      ptt?: boolean;
-    };
-    documentMessage?: {
-      url?: string;
-      mimetype?: string;
-      title?: string;
-      fileName?: string;
-      fileLength?: string | number;
-      caption?: string;
-    };
-    stickerMessage?: {
-      url?: string;
-      mimetype?: string;
-      fileLength?: string | number;
-    };
-    reactionMessage?: {
-      key?: { id?: string };
-      text?: string;
-    };
-    buttonsResponseMessage?: {
-      selectedButtonId?: string;
-      selectedDisplayText?: string;
-    };
-    listResponseMessage?: {
-      title?: string;
-      singleSelectReply?: { selectedRowId?: string };
-    };
-    contactMessage?: { displayName?: string; vcard?: string };
-    locationMessage?: { degreesLatitude?: number; degreesLongitude?: number; name?: string };
-    protocolMessage?: {
-      key?: { remoteJid?: string; fromMe?: boolean; id?: string };
-      type?: string; // "REVOKE" for deleted messages
-    };
-  };
-};
-
-// -- Helpers --
-
-function stripJid(jid: string): string {
-  return jid.replace(/@s\.whatsapp\.net$/, '').replace(/@g\.us$/, '').replace(/@lid$/, '');
-}
-
-function epochToIso(epoch?: number): string {
-  if (!epoch) return new Date().toISOString();
-  const ts = epoch > 1e12 ? epoch : epoch * 1000;
-  return new Date(ts).toISOString();
-}
-
-function resolveStatusFromUpdates(updates?: MessageUpdateEntry[]): string | undefined {
-  if (!updates || updates.length === 0) return undefined;
-  // Take the highest-priority status from the updates array
-  const statusPriority: Record<string, number> = {
-    ERROR: 0,
-    PENDING: 1,
-    SERVER_ACK: 2,
-    DELIVERY_ACK: 3,
-    READ: 4,
-    PLAYED: 5,
-  };
-  const statusMap: Record<string, string> = {
-    ERROR: 'failed',
-    PENDING: 'sent',
-    SERVER_ACK: 'sent',
-    DELIVERY_ACK: 'delivered',
-    READ: 'read',
-    PLAYED: 'read',
-  };
-
-  let best = '';
-  let bestPriority = -1;
-  for (const entry of updates) {
-    const p = statusPriority[entry.status] ?? -1;
-    if (p > bestPriority) {
-      bestPriority = p;
-      best = entry.status;
-    }
-  }
-  return statusMap[best];
-}
-
-function extractLastMessageContent(lastMsg?: EvolutionChatLastMessage): {
-  content: string;
-  direction: 'inbound' | 'outbound';
-  type?: string;
-} | undefined {
-  if (!lastMsg) return undefined;
-
-  const direction = lastMsg.key.fromMe ? 'outbound' as const : 'inbound' as const;
-  const msg = lastMsg.message;
-
-  if (!msg) return { content: '', direction, type: lastMsg.messageType };
-
-  // Extract text from various message shapes
-  const text =
-    (typeof msg.conversation === 'string' ? msg.conversation : undefined) ||
-    (msg.extendedTextMessage && typeof (msg.extendedTextMessage as { text?: string }).text === 'string'
-      ? (msg.extendedTextMessage as { text: string }).text
-      : undefined) ||
-    (msg.imageMessage && typeof (msg.imageMessage as { caption?: string }).caption === 'string'
-      ? (msg.imageMessage as { caption: string }).caption
-      : undefined) ||
-    '';
-
-  return {
-    content: text || `[${lastMsg.messageType || 'message'}]`,
-    direction,
-    type: lastMsg.messageType,
-  };
-}
-
-function extractContent(msg: EvolutionMessage): {
-  content: string;
-  messageType: string;
-  hasMedia: boolean;
-  caption: string | null;
-  filename: string | null;
-  mimeType: string | null;
-  mediaUrl: string | null;
-  mediaSize: number | null;
-  reactionEmoji: string | null;
-  reactedToMessageId: string | null;
-  revokedMessageId?: string | null;
-} {
-  const m = msg.message;
-  const fallbackType = msg.messageType || 'unknown';
-
-  if (!m) {
-    return {
-      content: '',
-      messageType: fallbackType,
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Text messages (messageType: "conversation" or "extendedTextMessage")
-  if (m.conversation) {
-    return {
-      content: m.conversation,
-      messageType: 'text',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  if (m.extendedTextMessage?.text) {
-    return {
-      content: m.extendedTextMessage.text,
-      messageType: 'text',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Protocol message (deleted / revoked)
-  if (m.protocolMessage?.type === 'REVOKE') {
-    return {
-      content: '',
-      messageType: 'revoked',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-      revokedMessageId: m.protocolMessage.key?.id || null,
-    };
-  }
-
-  // Reaction
-  if (m.reactionMessage) {
-    return {
-      content: m.reactionMessage.text || '',
-      messageType: 'reaction',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: m.reactionMessage.text || null,
-      reactedToMessageId: m.reactionMessage.key?.id || null,
-    };
-  }
-
-  // Image
-  if (m.imageMessage) {
-    return {
-      content: m.imageMessage.caption || '',
-      messageType: 'image',
-      hasMedia: true,
-      caption: m.imageMessage.caption || null,
-      filename: m.imageMessage.fileName || null,
-      mimeType: m.imageMessage.mimetype || 'image/jpeg',
-      mediaUrl: m.imageMessage.url || null,
-      mediaSize: m.imageMessage.fileLength ? Number(m.imageMessage.fileLength) : null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Video
-  if (m.videoMessage) {
-    return {
-      content: m.videoMessage.caption || '',
-      messageType: 'video',
-      hasMedia: true,
-      caption: m.videoMessage.caption || null,
-      filename: m.videoMessage.fileName || null,
-      mimeType: m.videoMessage.mimetype || 'video/mp4',
-      mediaUrl: m.videoMessage.url || null,
-      mediaSize: m.videoMessage.fileLength ? Number(m.videoMessage.fileLength) : null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Audio
-  if (m.audioMessage) {
-    return {
-      content: '',
-      messageType: 'audio',
-      hasMedia: true,
-      caption: null,
-      filename: m.audioMessage.fileName || null,
-      mimeType: m.audioMessage.mimetype || 'audio/ogg',
-      mediaUrl: m.audioMessage.url || null,
-      mediaSize: m.audioMessage.fileLength ? Number(m.audioMessage.fileLength) : null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Document
-  if (m.documentMessage) {
-    return {
-      content: m.documentMessage.caption || '',
-      messageType: 'document',
-      hasMedia: true,
-      caption: m.documentMessage.caption || null,
-      filename: m.documentMessage.fileName || m.documentMessage.title || null,
-      mimeType: m.documentMessage.mimetype || 'application/octet-stream',
-      mediaUrl: m.documentMessage.url || null,
-      mediaSize: m.documentMessage.fileLength ? Number(m.documentMessage.fileLength) : null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Sticker
-  if (m.stickerMessage) {
-    return {
-      content: '',
-      messageType: 'sticker',
-      hasMedia: true,
-      caption: null,
-      filename: null,
-      mimeType: m.stickerMessage.mimetype || 'image/webp',
-      mediaUrl: m.stickerMessage.url || null,
-      mediaSize: m.stickerMessage.fileLength ? Number(m.stickerMessage.fileLength) : null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Contact
-  if (m.contactMessage) {
-    return {
-      content: m.contactMessage.displayName || '[Contact]',
-      messageType: 'contact',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Location
-  if (m.locationMessage) {
-    return {
-      content: m.locationMessage.name || `[Location: ${m.locationMessage.degreesLatitude}, ${m.locationMessage.degreesLongitude}]`,
-      messageType: 'location',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Buttons response
-  if (m.buttonsResponseMessage) {
-    return {
-      content: m.buttonsResponseMessage.selectedDisplayText || '[Button response]',
-      messageType: 'buttons_response',
-      hasMedia: false,
-      caption: null,
-      filename: null,
-      mimeType: null,
-      mediaUrl: null,
-      mediaSize: null,
-      reactionEmoji: null,
-      reactedToMessageId: null,
-    };
-  }
-
-  // Fallback
-  return {
-    content: '',
-    messageType: fallbackType,
-    hasMedia: false,
-    caption: null,
-    filename: null,
-    mimeType: null,
-    mediaUrl: null,
-    mediaSize: null,
-    reactionEmoji: null,
-    reactedToMessageId: null,
-  };
-}
-
 // -- Provider implementation --
+
+const DEFAULT_EVOLUTION_CAPABILITIES: ProviderCapabilities = {
+  templates: false,
+  messagingWindow24h: false,
+  pushToTalk: true,
+  interactiveButtons: true,
+  deleteForEveryone: true,
+  markAsRead: true,
+  conversationInitiation: { canInitiate: true, identifierType: 'phone' },
+};
 
 export class EvolutionProvider implements MessagingProvider {
   readonly type = 'evolution' as const;
-  readonly capabilities: ProviderCapabilities = {
-    templates: false,
-    messagingWindow24h: false,
-    pushToTalk: true,
-    interactiveButtons: true,
-    deleteForEveryone: true,
-    conversationInitiation: { canInitiate: true, identifierType: 'phone' },
-  };
+  readonly capabilities: ProviderCapabilities;
 
   // Cache: @s.whatsapp.net JID -> @lid JID (built during findChats)
   private phoneLidMap = new Map<string, string>();
@@ -461,8 +68,10 @@ export class EvolutionProvider implements MessagingProvider {
 
   constructor(
     private readonly baseUrl: string,
-    private readonly instanceToken: string
+    private readonly instanceToken: string,
+    capabilitiesOverride?: Partial<ProviderCapabilities>,
   ) {
+    this.capabilities = { ...DEFAULT_EVOLUTION_CAPABILITIES, ...capabilitiesOverride };
     // Validate API URL protocol
     try {
       const parsed = new URL(baseUrl);
@@ -470,7 +79,8 @@ export class EvolutionProvider implements MessagingProvider {
         throw new Error(`Unsupported API URL protocol: ${parsed.protocol}`);
       }
       if (parsed.protocol === 'http:') {
-        if (process.env.NODE_ENV === 'production') {
+        const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '::1';
+        if (process.env.NODE_ENV === 'production' && !isLocal) {
           throw new Error(
             'API URL must use HTTPS in production. Sending instance tokens over HTTP exposes them to network interception.',
           );
@@ -929,6 +539,14 @@ export class EvolutionProvider implements MessagingProvider {
     await this.request(`/chat/deleteMessageForEveryone/${encodeURIComponent(instanceName)}`, {
       method: 'DELETE',
       body: JSON.stringify({ id: messageId, remoteJid, fromMe }),
+    });
+  }
+
+  async markChatAsRead(instanceName: string, chatId: string): Promise<void> {
+    const remoteJid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+    await this.request(`/chat/markMessageAsRead/${encodeURIComponent(instanceName)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ readMessages: [{ remoteJid, fromMe: false, id: 'all' }] }),
     });
   }
 

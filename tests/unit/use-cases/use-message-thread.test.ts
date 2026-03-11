@@ -22,6 +22,9 @@ vi.mock('@/lib/provider-context', () => ({
     readonly: false,
     viewMode: 'single',
     setViewMode: vi.fn(),
+    eventBus: null,
+    realtimeStates: {},
+    setWebSocketEnabled: vi.fn(),
   }),
 }));
 

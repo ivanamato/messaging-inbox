@@ -18,7 +18,7 @@ export const app = new Hono();
 
 app.use('*', cors({
   origin: '*',
-  allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'apikey', 'Authorization'],
 }));
 
@@ -283,6 +283,18 @@ app.post('/chat/findMessages/:instance', async (c) => {
   // Case 3: plain with optional limit
   const effectiveLimit = typeof limit === 'number' ? limit : 50;
   return c.json({ messages: { records: allMessages.slice(-effectiveLimit) } });
+});
+
+// ── Mark as Read ──────────────────────────────────────────────────────────────
+
+app.put('/chat/markMessageAsRead/:instance', async (c) => {
+  const instance = c.req.param('instance');
+  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  const body = await c.req.json<{ readMessages?: Array<{ remoteJid?: string }> }>();
+  for (const entry of body.readMessages ?? []) {
+    if (entry.remoteJid) store.clearUnread(instance, entry.remoteJid);
+  }
+  return c.json({ success: true });
 });
 
 // ── Get Media (Base64) ────────────────────────────────────────────────────────

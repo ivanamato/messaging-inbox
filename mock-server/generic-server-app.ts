@@ -5,11 +5,14 @@ import {
   genericFixturesByInstance,
   type NormalizedMessage,
 } from './generic-fixtures.js';
+import { broadcastToChannel } from './generic-ws.js';
 
 // In-memory store for messages sent during the session (per instance:chatId)
 const sentMessages = new Map<string, NormalizedMessage[]>();
 // Deleted message IDs per instance
 const deletedIds = new Map<string, Set<string>>();
+// Chats marked as read per instance
+const clearedChats = new Map<string, Set<string>>();
 
 function getSent(instance: string, chatId: string): NormalizedMessage[] {
   const key = `${instance}:${chatId}`;
@@ -20,6 +23,11 @@ function getSent(instance: string, chatId: string): NormalizedMessage[] {
 function getDeleted(instance: string): Set<string> {
   if (!deletedIds.has(instance)) deletedIds.set(instance, new Set());
   return deletedIds.get(instance)!;
+}
+
+function getCleared(instance: string): Set<string> {
+  if (!clearedChats.has(instance)) clearedChats.set(instance, new Set());
+  return clearedChats.get(instance)!;
 }
 
 export const genericApp = new Hono();
@@ -72,11 +80,13 @@ genericApp.get('/channels/:channelId/chats', (c) => {
   if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
 
   const deleted = getDeleted(instance!);
+  const cleared = getCleared(instance!);
 
   // Merge fixture chats with any sent messages that updated the last message
   const chats = fixtures.chats.map((chat) => {
     const sent = getSent(instance!, chat.id).filter((m) => !deleted.has(m.id));
-    if (sent.length === 0) return chat;
+    const unreadCount = cleared.has(chat.id) ? 0 : (chat.unreadCount ?? 0);
+    if (sent.length === 0) return { ...chat, unreadCount };
     const latest = sent[sent.length - 1];
     return {
       ...chat,
@@ -156,6 +166,9 @@ genericApp.post('/channels/:channelId/messages/text', async (c) => {
   };
   getSent(instance!, body.to).push(msg);
 
+  // Broadcast via WebSocket
+  broadcastToChannel(instance!, { type: 'message.new', chatId: body.to, message: msg });
+
   return c.json({ messageId, status: 'sent' });
 });
 
@@ -186,6 +199,9 @@ genericApp.post('/channels/:channelId/messages/media', async (c) => {
   };
   getSent(instance!, body.to).push(msg);
 
+  // Broadcast via WebSocket
+  broadcastToChannel(instance!, { type: 'message.new', chatId: body.to, message: msg });
+
   return c.json({ messageId, status: 'sent' });
 });
 
@@ -210,6 +226,19 @@ genericApp.get('/channels/:channelId/media/:messageId', (c) => {
   return c.json({ url: '' }, 404);
 });
 
+// ── POST /channels/:channelId/chats/:chatId/read — mark chat as read ─────────
+
+genericApp.post('/channels/:channelId/chats/:chatId/read', (c) => {
+  const channelId = c.req.param('channelId');
+  const chatId = c.req.param('chatId');
+  const instance = resolveInstance(c);
+  if (!instance || instance !== channelId || !genericFixturesByInstance[instance]) {
+    return c.json({ error: 'Channel not found' }, 404);
+  }
+  getCleared(instance).add(chatId);
+  return new Response(null, { status: 204 });
+});
+
 // ── POST /channels/:channelId/reset — wipe in-memory test state ──────────────
 
 genericApp.post('/channels/:channelId/reset', (c) => {
@@ -222,6 +251,7 @@ genericApp.post('/channels/:channelId/reset', (c) => {
     if (key.startsWith(`${instance}:`)) sentMessages.delete(key);
   }
   deletedIds.delete(instance);
+  clearedChats.delete(instance);
   return new Response(null, { status: 204 });
 });
 
@@ -261,9 +291,11 @@ genericApp.get('/api/v2/:channelId/conversations', (c) => {
   if (!fixtures) return c.json({ error: 'Channel not found' }, 404);
 
   const deleted = getDeleted(instance!);
+  const cleared = getCleared(instance!);
   const chats = fixtures.chats.map((chat) => {
     const sent = getSent(instance!, chat.id).filter((m) => !deleted.has(m.id));
-    if (sent.length === 0) return chat;
+    const unreadCount = cleared.has(chat.id) ? 0 : (chat.unreadCount ?? 0);
+    if (sent.length === 0) return { ...chat, unreadCount };
     const latest = sent[sent.length - 1];
     return {
       ...chat,
@@ -318,6 +350,7 @@ genericApp.post('/api/v2/:channelId/send/text', async (c) => {
     hasMedia: false, messageType: 'text', reactionEmoji: null, reactedToMessageId: null,
   };
   getSent(instance!, body.to).push(msg);
+  broadcastToChannel(instance!, { type: 'message.new', chatId: body.to, message: msg });
   return c.json({ messageId, status: 'sent' });
 });
 
@@ -337,6 +370,7 @@ genericApp.post('/api/v2/:channelId/send/media', async (c) => {
     reactionEmoji: null, reactedToMessageId: null,
   };
   getSent(instance!, body.to).push(msg);
+  broadcastToChannel(instance!, { type: 'message.new', chatId: body.to, message: msg });
   return c.json({ messageId, status: 'sent' });
 });
 
@@ -365,6 +399,17 @@ genericApp.delete('/api/v2/:channelId/history/:messageId', (c) => {
   return new Response(null, { status: 204 });
 });
 
+genericApp.post('/api/v2/:channelId/conversations/:chatId/read', (c) => {
+  const channelId = c.req.param('channelId');
+  const chatId = c.req.param('chatId');
+  const instance = resolveInstance(c);
+  if (!instance || instance !== channelId || !genericFixturesByInstance[instance]) {
+    return c.json({ error: 'Channel not found' }, 404);
+  }
+  getCleared(instance).add(chatId);
+  return new Response(null, { status: 204 });
+});
+
 genericApp.post('/api/v2/:channelId/reset', (c) => {
   const channelId = c.req.param('channelId');
   const instance = resolveInstance(c);
@@ -375,5 +420,6 @@ genericApp.post('/api/v2/:channelId/reset', (c) => {
     if (key.startsWith(`${instance}:`)) sentMessages.delete(key);
   }
   deletedIds.delete(instance);
+  clearedChats.delete(instance);
   return new Response(null, { status: 204 });
 });

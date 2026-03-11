@@ -8,6 +8,9 @@ const EVENT_STYLES: Record<TimelineEventType, { color: string; icon: string }> =
   error: { color: '#ef4444', icon: '✗' },
   optimistic_confirm: { color: '#94a3b8', icon: '✓' },
   provider_call: { color: '#64748b', icon: '→' },
+  ws_connected: { color: '#10b981', icon: '⚡' },
+  ws_disconnected: { color: '#f97316', icon: '⚡' },
+  ws_event: { color: '#6366f1', icon: '⚡' },
 };
 
 function formatTime(ts: number): string {

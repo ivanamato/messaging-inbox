@@ -1,4 +1,9 @@
-# Release commands (gitignored — contains push operations)
+# Gitignored commands (contains credentials / push operations)
+
+# Build library and serve the Vue 3 private example at http://localhost:5174
+private-example:
+    npm run build
+    cd examples/vue3-private-example && npm install && npx vite --port 5174 --host 0.0.0.0
 
 # Bump minor version, push, and create GitHub release
 release-minor:

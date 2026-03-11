@@ -14,6 +14,8 @@ export type ImperativeApi = {
   setActiveDevice: (deviceId: string) => void;
   selectConversation: (phoneNumber: string, prefillMessage?: string, deviceId?: string) => void;
   openChat: (phoneNumber: string, options?: { prefillMessage?: string; deviceId?: string }) => void;
+  setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
+  setWebSocketEnabledAll: (enabled: boolean) => void;
 };
 
 type Props = {
@@ -25,7 +27,7 @@ type Props = {
 export const ImperativeApiBridge = forwardRef<ImperativeApi, Props>(
   ({ chatActions, chatTags, chatTagsBulk }, ref) => {
     const provider = useProvider();
-    const { selectedDevice, selectDevice, devices, getProviderForDevice, viewMode } = useDeviceContext();
+    const { selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, setWebSocketEnabled: ctxSetWs } = useDeviceContext();
     const conversationListRef = useRef<ConversationListRef>(null);
     const [prefillToken, setPrefillToken] = useState<{ id: number; message: string } | null>(null);
     const prefillCounterRef = useRef(0);
@@ -116,7 +118,15 @@ export const ImperativeApiBridge = forwardRef<ImperativeApi, Props>(
           conversationListRef.current?.openChat(phoneNumber);
         }
       },
-    }), [provider, selectedDevice, selectDevice, devices, getProviderForDevice, viewMode]);
+      setWebSocketEnabled: (deviceId: string, enabled: boolean) => {
+        ctxSetWs(deviceId, enabled);
+      },
+      setWebSocketEnabledAll: (enabled: boolean) => {
+        for (const device of devices) {
+          ctxSetWs(device.id, enabled);
+        }
+      },
+    }), [provider, selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, ctxSetWs]);
 
     return (
       <ErrorBoundary>

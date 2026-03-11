@@ -46,6 +46,7 @@ When no `endpoints` config is provided, the provider uses these defaults:
 | `sendButtons` | `POST /channels/{channelId}/messages/buttons` | Send interactive buttons |
 | `media` | `GET /channels/{channelId}/media/{messageId}` | Get media download URL |
 | `deleteMsg` | `DELETE /channels/{channelId}/messages/{messageId}` | Delete a message |
+| `markAsRead` | `POST /channels/{channelId}/chats/{chatId}/read` | Mark a chat as read |
 
 ## Custom endpoints
 
@@ -67,6 +68,7 @@ Override any or all endpoints via the `endpoints` config on the device:
     sendButtons: 'POST /api/v2/{channelId}/send/buttons',
     media:       'GET /api/v2/{channelId}/attachments/{messageId}',
     deleteMsg:   'DELETE /api/v2/{channelId}/history/{messageId}',
+    markAsRead:  'POST /api/v2/{channelId}/conversations/{chatId}/read',
   },
 }
 ```
@@ -305,6 +307,16 @@ Return a direct URL (or pre-signed URL) to the media file. The inbox fetches and
 
 The `metadata` field passes through provider-specific context. Your backend can ignore it if deletion only needs the message ID (from the URL).
 
+---
+
+### `markAsRead` — Mark a chat as read
+
+**Request:** No body required.
+
+**Response:** `204 No Content`
+
+Called fire-and-forget when a user opens a conversation. Gated behind the `markAsRead` capability flag — only sent when `capabilities.markAsRead` is `true`.
+
 ## Capabilities
 
 Declare what your backend supports via `capabilities` on the device config. All default to `false` for `generic-server`:
@@ -318,6 +330,7 @@ Declare what your backend supports via `capabilities` on the device config. All 
     pushToTalk: true,              // Voice message recording
     interactiveButtons: true,      // Button messages
     deleteForEveryone: true,       // Message deletion
+    markAsRead: true,              // Mark conversations as read on open
     conversationInitiation: {
       canInitiate: true,           // Can start new conversations
       identifierType: 'phone',    // 'phone', 'username', or 'opaque'
@@ -405,6 +418,73 @@ mount(el, {
   ],
 })
 ```
+
+## WebSocket (real-time updates)
+
+The generic-server provider supports **optional WebSocket** connections for real-time push updates. When enabled, the inbox receives events instantly instead of polling.
+
+### Configuration
+
+Add `websocket` to the device config:
+
+```ts
+{
+  id: 'my-backend',
+  apiUrl: 'https://api.example.com',
+  instanceToken: 'bearer-token',
+  instanceName: 'main-channel',
+  providerType: 'generic-server',
+  websocket: {
+    enabled: true,
+    url: 'wss://api.example.com/ws/channels/{channelId}',  // optional override
+  },
+}
+```
+
+If `url` is omitted, the default is `wss://<apiUrl>/ws/channels/{channelId}` (protocol swapped from http→ws).
+
+You can also specify a custom WebSocket endpoint via the `endpoints.ws` field.
+
+### Authentication
+
+The token is sent as a query parameter since native WebSocket cannot send custom headers on connect:
+
+```
+wss://api.example.com/ws/channels/main-channel?token=bearer-token
+```
+
+### Server→client message format
+
+Messages are JSON frames using the same normalized types as the REST API:
+
+```json
+{ "type": "message.new", "chatId": "14151234567", "message": { /* Message */ } }
+{ "type": "message.updated", "chatId": "14151234567", "messageId": "msg-001", "status": "read" }
+{ "type": "message.deleted", "chatId": "14151234567", "messageId": "msg-001" }
+{ "type": "chat.updated", "chat": { "id": "14151234567", "unreadCount": 0 } }
+{ "type": "chat.new", "chat": { /* Chat */ } }
+{ "type": "connection.changed", "state": "open" }
+```
+
+### Client→server messages
+
+- `{ "type": "ping" }` — keepalive. Server responds with `{ "type": "pong" }`.
+
+### Reconnection
+
+The client automatically reconnects with exponential backoff (1s → 30s max). During disconnection, polling resumes as a fallback.
+
+### Runtime control
+
+Toggle WebSocket at runtime via the imperative API:
+
+```js
+inbox.setWebSocketEnabled('device-id', false)  // disable → falls back to polling
+inbox.setWebSocketEnabled('device-id', true)   // enable → reconnects WS
+inbox.setWebSocketEnabledAll(false)             // disable for all devices
+```
+
+---
 
 ## Mock server
 

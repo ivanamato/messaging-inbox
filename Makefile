@@ -21,8 +21,9 @@ typecheck: ## Run TypeScript type check
 clean: ## Remove build artifacts and node_modules
 	rm -rf dist node_modules
 
-example-vue3: build ## Build library and serve the Vue 3 example at http://localhost:5174 (requires: make docker)
+example-vue3: build ## Build library and serve the Vue 3 CDN example at http://localhost:5174 (requires: make docker)
 	npx serve . -l 5174 --no-request-logging -C
+
 
 test: ## Run unit tests (Vitest)
 	npm run test

@@ -85,7 +85,7 @@ const devChatActions: ChatActionsResolver = (chat) => {
 
 loadConfig().then((config) => {
   const params = new URLSearchParams(window.location.search);
-  const debug = params.has('debug');
+  const debug = !params.has('no-debug');
 
   const inbox = mount(document.getElementById('app')!, {
     ...config,
@@ -194,4 +194,19 @@ loadConfig().then((config) => {
     inbox.openChat('5599999999999', { deviceId: 'mock-device-1' })));
   s3.appendChild(btn('Open new on Instagram (blocked)', () =>
     inbox.openChat('99999', { deviceId: 'mock-device-2' }), '#e91e63'));
+
+  // ── Section: WebSocket controls ─────────────────────────────────────────
+  const sws = section('WebSocket controls');
+  sws.appendChild(btn('Disable WS (device 1)', () =>
+    inbox.setWebSocketEnabled('mock-device-1', false), '#dc2626'));
+  sws.appendChild(btn('Enable WS (device 1)', () =>
+    inbox.setWebSocketEnabled('mock-device-1', true), '#16a34a'));
+  sws.appendChild(btn('Disable WS (device 2)', () =>
+    inbox.setWebSocketEnabled('mock-device-2', false), '#dc2626'));
+  sws.appendChild(btn('Enable WS (device 2)', () =>
+    inbox.setWebSocketEnabled('mock-device-2', true), '#16a34a'));
+  sws.appendChild(btn('Disable all WS', () =>
+    inbox.setWebSocketEnabledAll(false), '#dc2626'));
+  sws.appendChild(btn('Enable all WS', () =>
+    inbox.setWebSocketEnabledAll(true), '#16a34a'));
 });

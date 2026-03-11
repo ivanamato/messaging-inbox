@@ -31,6 +31,7 @@ export type ProviderCapabilities = {
   pushToTalk: boolean;
   interactiveButtons: boolean;
   deleteForEveryone: boolean;
+  markAsRead: boolean;
   /** How/whether new conversations can be initiated. Defaults to phone-based free initiation. */
   conversationInitiation?: ConversationInitiationCapability;
 };
@@ -79,6 +80,7 @@ export type PrebuiltMessage = {
  * - sendButtons: `"POST /channels/{channelId}/messages/buttons"`
  * - media:       `"GET /channels/{channelId}/media/{messageId}"`
  * - deleteMsg:   `"DELETE /channels/{channelId}/messages/{messageId}"`
+ * - markAsRead:  `"POST /channels/{channelId}/chats/{chatId}/read"`
  */
 export type GenericServerEndpoints = {
   status?: string;
@@ -89,6 +91,9 @@ export type GenericServerEndpoints = {
   sendButtons?: string;
   media?: string;
   deleteMsg?: string;
+  markAsRead?: string;
+  /** WebSocket endpoint template. Placeholder: `{channelId}`. Default: `wss://<apiUrl>/ws/channels/{channelId}` */
+  ws?: string;
 };
 
 export type DeviceConfig = {
@@ -108,6 +113,12 @@ export type DeviceConfig = {
   capabilities?: Partial<ProviderCapabilities>;
   /** Custom endpoint map for generic-server provider. Ignored for evolution provider. */
   endpoints?: GenericServerEndpoints;
+  /** WebSocket real-time configuration. When enabled, the inbox receives push updates instead of polling. */
+  websocket?: {
+    enabled: boolean;
+    /** Override WebSocket URL. Default: derived from apiUrl (http→ws, https→wss). */
+    url?: string;
+  };
 };
 
 export type ChatAction = {
@@ -243,6 +254,7 @@ export interface MessagingProvider {
   sendButtons(channelId: string, params: SendButtonsParams): Promise<SendResult>;
   getMediaUrl(channelId: string, messageId: string): Promise<string | null>;
   deleteMessage(channelId: string, params: DeleteMessageParams): Promise<void>;
+  markChatAsRead(channelId: string, chatId: string): Promise<void>;
 }
 
 /** @deprecated Use MessagingProvider */

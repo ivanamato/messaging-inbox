@@ -5,15 +5,17 @@ import { RequestLoggerSection } from './sections/request-logger';
 import { DataValidationSection } from './sections/data-validation';
 import { ProviderComparisonSection } from './sections/provider-comparison';
 import { EventTimelineSection } from './sections/event-timeline';
+import { WsLogsSection } from './sections/ws-logs';
 
 // Stable references to avoid infinite re-render when store is null
 const NOOP_SUBSCRIBE = (_cb: () => void) => () => {};
-const EMPTY_SNAPSHOT = { requests: [] as never[], events: [] as never[] };
+const EMPTY_SNAPSHOT = { requests: [] as never[], events: [] as never[], wsLogs: [] as never[] };
 const GET_EMPTY_SNAPSHOT = () => EMPTY_SNAPSHOT;
 
 const TABS = [
   { id: 'health', label: 'Devices' },
   { id: 'requests', label: 'Requests' },
+  { id: 'websocket', label: 'WebSocket' },
   { id: 'validation', label: 'Validation' },
   { id: 'compare', label: 'Compare' },
   { id: 'timeline', label: 'Timeline' },
@@ -109,6 +111,11 @@ export function DebugPanel() {
                     {snapshot.requests.length}
                   </span>
                 )}
+                {tab.id === 'websocket' && snapshot.wsLogs.length > 0 && (
+                  <span style={{ color: '#64748b', marginLeft: 8 }}>
+                    {snapshot.wsLogs.length}
+                  </span>
+                )}
               </button>
             ))}
 
@@ -143,6 +150,7 @@ export function DebugPanel() {
           <div className="wa:flex-1 wa:overflow-auto wa:p-2">
             {activeTab === 'health' && <DeviceHealthSection />}
             {activeTab === 'requests' && <RequestLoggerSection requests={snapshot.requests} />}
+            {activeTab === 'websocket' && <WsLogsSection wsLogs={snapshot.wsLogs} />}
             {activeTab === 'validation' && <DataValidationSection requests={snapshot.requests} />}
             {activeTab === 'compare' && <ProviderComparisonSection requests={snapshot.requests} />}
             {activeTab === 'timeline' && <EventTimelineSection events={snapshot.events} />}

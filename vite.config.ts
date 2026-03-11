@@ -61,6 +61,9 @@ export default defineConfig(({ command }) => ({
       command === 'build' ? 'production' : 'development'
     ),
   },
+  optimizeDeps: {
+    include: ['socket.io-client'],
+  },
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
@@ -69,6 +72,7 @@ export default defineConfig(({ command }) => ({
       fileName: (format) => `messaging-inbox.${format}.js`,
     },
     rollupOptions: {
+      external: ['socket.io-client'],
       output: {
         assetFileNames: (assetInfo) => {
           if (assetInfo.name === 'style.css') return 'style.css';

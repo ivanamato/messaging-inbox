@@ -3,6 +3,14 @@ import type { EvolutionMessageFixture } from './fixtures.js';
 type Contact = { remoteJid: string; pushName: string; profilePicUrl: null };
 type MediaEntry = { base64: string; mimetype: string };
 
+export type StoreMutationEvent = {
+  instance: string;
+  type: string;
+  data: unknown;
+};
+
+type MutationHandler = (event: StoreMutationEvent) => void;
+
 class MockStore {
   private messages: Map<string, EvolutionMessageFixture[]> = new Map();
   private _deletedIds: Map<string, Set<string>> = new Map();
@@ -12,6 +20,21 @@ class MockStore {
   private pendingUnread: Map<string, Map<string, number>> = new Map();
   // JIDs that have been opened (findMessages called) at least once
   private clearedJids: Map<string, Set<string>> = new Map();
+  // Mutation listeners for WebSocket broadcasting
+  private mutationHandlers = new Set<MutationHandler>();
+
+  // ── mutation events ─────────────────────────────────────────────────────
+
+  onMutation(handler: MutationHandler): () => void {
+    this.mutationHandlers.add(handler);
+    return () => { this.mutationHandlers.delete(handler); };
+  }
+
+  private emitMutation(event: StoreMutationEvent): void {
+    for (const handler of this.mutationHandlers) {
+      try { handler(event); } catch { /* ignore */ }
+    }
+  }
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -54,6 +77,8 @@ class MockStore {
       const jid = msg.key.remoteJid;
       pending.set(jid, (pending.get(jid) ?? 0) + 1);
     }
+    // Emit WS event
+    this.emitMutation({ instance, type: 'messages.upsert', data: msg });
   }
 
   getAllMessages(instance: string): EvolutionMessageFixture[] {
@@ -66,7 +91,15 @@ class MockStore {
 
   updateMessageStatus(instance: string, id: string, status: string): void {
     const msg = this.msgsFor(instance).find((m) => m.key.id === id);
-    if (msg) msg.MessageUpdate = [{ status }];
+    if (msg) {
+      msg.MessageUpdate = [{ status }];
+      // Emit WS event
+      this.emitMutation({
+        instance,
+        type: 'messages.update',
+        data: [{ key: { id: msg.key.id, remoteJid: msg.key.remoteJid }, update: { status } }],
+      });
+    }
   }
 
   getMessageById(instance: string, id: string): EvolutionMessageFixture | undefined {
@@ -81,6 +114,13 @@ class MockStore {
 
   addDeletedId(instance: string, id: string): void {
     this.deletedFor(instance).add(id);
+    // Find the message to get remoteJid for the WS event
+    const msg = this.getMessageById(instance, id);
+    this.emitMutation({
+      instance,
+      type: 'messages.delete',
+      data: { key: { id, remoteJid: msg?.key.remoteJid ?? '' } },
+    });
   }
 
   // ── media ─────────────────────────────────────────────────────────────────

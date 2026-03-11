@@ -580,6 +580,7 @@ type ProviderCapabilities = {
   pushToTalk: boolean;         // Enable voice recording in the composer
   interactiveButtons: boolean; // Enable the interactive button message dialog
   deleteForEveryone: boolean;  // Show "delete for everyone" in the message context menu
+  markAsRead: boolean;         // Send read receipts to the backend when opening a chat
 };
 ```
 
@@ -590,12 +591,13 @@ type ProviderCapabilities = {
 | `pushToTalk` | `true` | Disable for channels that don't support audio messages |
 | `interactiveButtons` | `true` | Disable for channels that don't support button messages |
 | `deleteForEveryone` | `true` | Disable if your backend doesn't support message deletion |
+| `markAsRead` | `true` | Sends a read receipt to the backend when the user opens a chat. Disable if your backend doesn't track read state. |
 
 ---
 
 #### API contract
 
-Your backend must implement the following 8 endpoints. All paths are relative to `apiUrl`, and `:channelId` is always `instanceName`. Every request (except `OPTIONS` preflight) carries `Authorization: Bearer <instanceToken>`.
+Your backend must implement the following endpoints. All paths are relative to `apiUrl`, and `:channelId` is always `instanceName`. Every request (except `OPTIONS` preflight) carries `Authorization: Bearer <instanceToken>`.
 
 | Method | Path | Description |
 |---|---|---|
@@ -607,6 +609,7 @@ Your backend must implement the following 8 endpoints. All paths are relative to
 | `POST` | `/channels/:channelId/messages/buttons` | Send interactive button message |
 | `GET` | `/channels/:channelId/media/:messageId` | Resolve a media URL |
 | `DELETE` | `/channels/:channelId/messages/:messageId` | Delete a message for everyone |
+| `POST` | `/channels/:channelId/chats/:chatId/read` | Mark a chat as read (optional — requires `capabilities.markAsRead`) |
 
 ---
 
@@ -794,13 +797,23 @@ Delete a message for everyone. The optional request body can carry provider-spec
 
 ---
 
+##### `POST /channels/:channelId/chats/:chatId/read`
+
+Mark a conversation as read. Called fire-and-forget when a user opens a chat. Only sent when `capabilities.markAsRead` is `true`.
+
+**Request:** No body required.
+
+**Response `204` (no body).**
+
+---
+
 #### CORS
 
 The browser calls your backend directly, so CORS must allow requests from the host app's origin:
 
 ```
 Access-Control-Allow-Origin:  https://your-app.com  (or * for dev)
-Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
 Access-Control-Allow-Headers: Content-Type, Authorization
 ```
 
@@ -1258,6 +1271,7 @@ The mock server (`mock-server/`) is a [Hono](https://hono.dev/) HTTP server that
 | `/message/sendText/:instance` | POST | Stores message, triggers delivery progression and auto-reply |
 | `/message/sendMedia/:instance` | POST | Stores message + base64 payload |
 | `/message/sendButtons/:instance` | POST | Stores button message |
+| `/chat/markMessageAsRead/:instance` | PUT | Marks messages as read; clears unread count |
 | `/chat/deleteMessageForEveryone/:instance` | DELETE | Marks message deleted; emits REVOKE event |
 | `/test/reset/:instance` | POST | Wipes in-memory state for an instance (used by e2e tests in `beforeEach`) |
 
@@ -1275,6 +1289,7 @@ Implements the full [generic server contract](#api-contract) for the `GENERIC1` 
 | `/channels/:channelId/messages/buttons` | POST | Stores button message |
 | `/channels/:channelId/media/:messageId` | GET | Returns `{ url }` for stored media |
 | `/channels/:channelId/messages/:messageId` | DELETE | Marks message deleted (204) |
+| `/channels/:channelId/chats/:chatId/read` | POST | Marks chat as read; clears unread count (204) |
 | `/channels/:channelId/reset` | POST | Wipes in-memory state (used by e2e tests in `beforeEach`) |
 
 **Mock instances:**

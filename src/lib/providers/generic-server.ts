@@ -13,7 +13,7 @@ import type {
   GenericServerEndpoints,
 } from './types';
 
-const DEFAULT_ENDPOINTS: Required<GenericServerEndpoints> = {
+const DEFAULT_ENDPOINTS: Required<Omit<GenericServerEndpoints, 'ws'>> = {
   status:      'GET /channels/{channelId}/status',
   chats:       'GET /channels/{channelId}/chats',
   messages:    'GET /channels/{channelId}/chats/{chatId}/messages?page={page}&pageSize={pageSize}',
@@ -22,6 +22,7 @@ const DEFAULT_ENDPOINTS: Required<GenericServerEndpoints> = {
   sendButtons: 'POST /channels/{channelId}/messages/buttons',
   media:       'GET /channels/{channelId}/media/{messageId}',
   deleteMsg:   'DELETE /channels/{channelId}/messages/{messageId}',
+  markAsRead:  'POST /channels/{channelId}/chats/{chatId}/read',
 };
 
 const DEFAULT_GENERIC_CAPABILITIES: ProviderCapabilities = {
@@ -30,6 +31,7 @@ const DEFAULT_GENERIC_CAPABILITIES: ProviderCapabilities = {
   pushToTalk: false,
   interactiveButtons: false,
   deleteForEveryone: false,
+  markAsRead: false,
   conversationInitiation: { canInitiate: false, identifierType: 'opaque' },
 };
 
@@ -56,7 +58,7 @@ function resolveEndpoint(
 export class GenericServerProvider implements MessagingProvider {
   readonly type = 'generic-server' as const;
   readonly capabilities: ProviderCapabilities;
-  private readonly endpoints: Required<GenericServerEndpoints>;
+  private readonly endpoints: Required<Omit<GenericServerEndpoints, 'ws'>>;
 
   constructor(
     private readonly baseUrl: string,
@@ -65,11 +67,12 @@ export class GenericServerProvider implements MessagingProvider {
     endpoints?: GenericServerEndpoints,
   ) {
     this.capabilities = { ...DEFAULT_GENERIC_CAPABILITIES, ...capabilitiesOverride };
-    this.endpoints = { ...DEFAULT_ENDPOINTS, ...endpoints };
+    const { ws: _ws, ...restEndpoints } = endpoints ?? {};
+    this.endpoints = { ...DEFAULT_ENDPOINTS, ...restEndpoints };
   }
 
   private async request<T>(
-    endpointKey: keyof GenericServerEndpoints,
+    endpointKey: Exclude<keyof GenericServerEndpoints, 'ws'>,
     vars: Record<string, string>,
     options?: RequestInit,
   ): Promise<T> {
@@ -162,5 +165,9 @@ export class GenericServerProvider implements MessagingProvider {
       'deleteMsg', { channelId, messageId: params.messageId },
       { body: params.metadata ? JSON.stringify({ metadata: params.metadata }) : undefined },
     );
+  }
+
+  async markChatAsRead(channelId: string, chatId: string): Promise<void> {
+    await this.request('markAsRead', { channelId, chatId });
   }
 }

@@ -16,6 +16,9 @@ let mockDeviceContextValue: {
   readonly: boolean;
   viewMode: 'single' | 'all';
   setViewMode: (mode: 'single' | 'all') => void;
+  eventBus: null;
+  realtimeStates: Record<string, string>;
+  setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
 };
 
 vi.mock('@/lib/provider-context', () => ({
@@ -79,6 +82,9 @@ function resetMockContext(chats: Chat[] = []) {
     readonly: false,
     viewMode: 'single',
     setViewMode: vi.fn(),
+    eventBus: null,
+    realtimeStates: {},
+    setWebSocketEnabled: vi.fn(),
   };
 }
 

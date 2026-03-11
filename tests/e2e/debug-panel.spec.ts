@@ -12,7 +12,7 @@ test.describe('Debug panel', () => {
   test.beforeEach(async ({ page }) => {
     chatList = new ConversationListPage(page);
     debug = new DebugPanelPage(page);
-    await page.goto('/?debug');
+    await page.goto('/');
     await chatList.waitForLoaded();
   });
 
@@ -133,12 +133,12 @@ test.describe('Debug panel', () => {
 });
 
 test.describe('Debug panel disabled', () => {
-  test('toggle button is not visible without ?debug', async ({ browser }) => {
+  test('toggle button is not visible with ?no-debug', async ({ browser }) => {
     // Use fresh context to avoid HMR pollution from previous tests
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    await page.goto('/');
+    await page.goto('/?no-debug');
     // Wait for the chat list to load (proves the app rendered)
     await page.locator('[data-testid="chat-item"]').first().waitFor({ state: 'visible', timeout: 30000 });
 

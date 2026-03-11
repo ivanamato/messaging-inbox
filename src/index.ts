@@ -35,6 +35,10 @@ export type WhatsAppInbox = {
    * message view so you can send the first message — unlike selectConversation which does nothing.
    */
   openChat: (phoneNumber: string, options?: { prefillMessage?: string; deviceId?: string }) => void;
+  /** Enable or disable WebSocket real-time updates for a specific device at runtime. */
+  setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
+  /** Enable or disable WebSocket real-time updates for all devices at runtime. */
+  setWebSocketEnabledAll: (enabled: boolean) => void;
   unmount: () => void;
 };
 
@@ -74,6 +78,8 @@ export function mount(element: HTMLElement, config: WhatsAppMultiDeviceConfig): 
     setActiveDevice: (deviceId) => getBridge().setActiveDevice(deviceId),
     selectConversation: (phoneNumber, prefillMessage?, deviceId?) => getBridge().selectConversation(phoneNumber, prefillMessage, deviceId),
     openChat: (phoneNumber, options?) => getBridge().openChat(phoneNumber, options),
+    setWebSocketEnabled: (deviceId, enabled) => getBridge().setWebSocketEnabled(deviceId, enabled),
+    setWebSocketEnabledAll: (enabled) => getBridge().setWebSocketEnabledAll(enabled),
     unmount: () => {
       root.unmount();
       roots.delete(element);

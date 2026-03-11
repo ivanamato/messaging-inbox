@@ -298,6 +298,15 @@ export class DebugProviderProxy implements MessagingProvider {
     }));
   }
 
+  async markChatAsRead(channelId: string, chatId: string): Promise<void> {
+    return this._wrap('markChatAsRead', channelId, { chatId }, async () => {
+      return this.inner.markChatAsRead(channelId, chatId);
+    }, () => ({
+      summary: 'marked as read',
+      validate: [],
+    }));
+  }
+
   // --- Internal helper ---
 
   private async _wrap<T>(

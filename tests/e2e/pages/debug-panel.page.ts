@@ -68,4 +68,19 @@ export class DebugPanelPage {
   requestFilter(): Locator {
     return this.panel.locator('[data-testid="debug-request-filter"]');
   }
+
+  /** WebSocket status indicator on a device card. */
+  wsStatus(card: Locator): Locator {
+    return card.locator('[data-testid="debug-ws-status"]');
+  }
+
+  /** WebSocket toggle button on a device card. */
+  wsToggle(card: Locator): Locator {
+    return card.locator('[data-testid="debug-ws-toggle"]');
+  }
+
+  /** Realtime mode indicator (WebSocket / Polling). */
+  realtimeMode(card: Locator): Locator {
+    return card.locator('[data-testid="debug-realtime-mode"]');
+  }
 }

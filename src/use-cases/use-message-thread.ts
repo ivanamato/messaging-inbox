@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
 import { differenceInHours, isValid } from 'date-fns';
-import { useProvider } from '@/lib/provider-context';
+import { useProvider, useDeviceContext } from '@/lib/provider-context';
 import { useAutoPolling } from '@/hooks/use-auto-polling';
+import { useRealtimeEvents } from '@/hooks/use-realtime-events';
 import { useTranslations } from '@/lib/i18n';
 import type { Message, MessagingProvider } from '@/lib/providers/types';
 
@@ -93,6 +94,7 @@ export function useMessageThread({
   const contextProvider = useProvider();
   const provider = providerOverride ?? contextProvider;
   const t = useTranslations();
+  const { eventBus, realtimeStates, selectedDevice } = useDeviceContext();
 
   const supportsTemplates = provider.capabilities.templates;
   const has24HWindow = provider.capabilities.messagingWindow24h;
@@ -214,6 +216,9 @@ export function useMessageThread({
     if (conversationId && instance) {
       setLoading(true);
       fetchInitialMessages();
+      if (provider.capabilities.markAsRead) {
+        provider.markChatAsRead(instance, conversationId).catch(() => {});
+      }
     }
   }, [conversationId, instance]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -222,11 +227,54 @@ export function useMessageThread({
     setCanSendRegularMessage(has24HWindow ? isWithin24HourWindow(messages) : true);
   }, [messages, has24HWindow]);
 
+  // Disable polling when WS is connected for the active device
+  const wsConnected = selectedDevice ? realtimeStates[selectedDevice.id] === 'connected' : false;
+
   useAutoPolling({
     interval: 5000,
-    enabled: !!conversationId && !!instance,
+    enabled: !!conversationId && !!instance && !wsConnected,
     onPoll: fetchInitialMessages,
   });
+
+  // Realtime: subscribe to message events for the current chat
+  useRealtimeEvents(eventBus, {
+    type: ['message.new', 'message.updated', 'message.deleted'],
+  }, useCallback((event) => {
+    if (!conversationId) return;
+
+    if (event.type === 'message.new') {
+      const { chatId, message } = event.payload;
+      // Only process events for the currently viewed chat
+      if (chatId !== conversationId && message.phoneNumber !== phoneNumber) return;
+
+      setMessages(prev => {
+        // Deduplicate against optimistic messages and existing messages
+        if (prev.some(m => m.id === message.id)) {
+          // Update existing message (reconcile optimistic)
+          return prev.map(m => m.id === message.id ? { ...m, ...message } : m);
+        }
+        // Remove matching optimistic message if we can identify it
+        const withoutOptimistic = prev.filter(m => {
+          if (!m.id.startsWith('optimistic-')) return true;
+          // Match by content + direction + proximity in time
+          return !(m.direction === message.direction && m.content === message.content);
+        });
+        const merged = [...withoutOptimistic, message];
+        merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        return merged;
+      });
+      // Auto-scroll for new incoming messages
+      isNearBottomRef.current = true;
+    } else if (event.type === 'message.updated') {
+      const { chatId, messageId, status } = event.payload;
+      if (chatId !== conversationId) return;
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, status } : m));
+    } else if (event.type === 'message.deleted') {
+      const { chatId, messageId } = event.payload;
+      if (chatId !== conversationId) return;
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content: '', messageType: 'deleted', hasMedia: false } : m));
+    }
+  }, [conversationId, phoneNumber, isNearBottomRef]));
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
