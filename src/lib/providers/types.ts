@@ -1,5 +1,10 @@
 // Normalized types used across all providers
 
+// Re-export segregated interfaces for consumers
+export type { ChatReader, MessageReader, MessageSender, ChatOperations, ConnectionStatus, MediaAccess } from './interfaces';
+
+import type { ChatReader, MessageReader, MessageSender, ChatOperations, ConnectionStatus, MediaAccess } from './interfaces';
+
 export type ProviderType = 'evolution' | 'generic-server';
 
 export type ConversationIdentifierType = 'phone' | 'username' | 'opaque';
@@ -245,20 +250,19 @@ export type PaginatedMessages = {
   };
 };
 
-export interface MessagingProvider {
+/**
+ * MessagingProvider - Composite interface extending all segregated interfaces.
+ *
+ * This interface combines all provider capabilities for backward compatibility.
+ * New code should prefer using the specific interfaces (ChatReader, MessageSender, etc.)
+ * when only a subset of capabilities is needed (Interface Segregation Principle).
+ */
+export interface MessagingProvider
+  extends ChatReader, MessageReader, MessageSender, ChatOperations, ConnectionStatus, MediaAccess {
+  /** Provider type identifier */
   readonly type: ProviderType;
+  /** Feature capabilities supported by this provider */
   readonly capabilities: ProviderCapabilities;
-
-  getConnectionState(channelId: string): Promise<'open' | 'close' | 'connecting'>;
-  findChats(channelId: string): Promise<Chat[]>;
-  findMessages(channelId: string, chatId: string, limit?: number): Promise<Message[]>;
-  findMessagesPaginated(channelId: string, chatId: string, options?: FindMessagesOptions): Promise<PaginatedMessages>;
-  sendText(channelId: string, params: SendTextParams): Promise<SendResult>;
-  sendMedia(channelId: string, params: SendMediaParams): Promise<SendResult>;
-  sendButtons(channelId: string, params: SendButtonsParams): Promise<SendResult>;
-  getMediaUrl(channelId: string, messageId: string): Promise<string | null>;
-  deleteMessage(channelId: string, params: DeleteMessageParams): Promise<void>;
-  markChatAsRead(channelId: string, chatId: string): Promise<void>;
 }
 
 /** @deprecated Use MessagingProvider */

@@ -1,36 +1,53 @@
+/**
+ * Provider system with registry pattern for extensibility.
+ * @module providers/index
+ *
+ * New providers can be registered without modifying this file by importing
+ * the registry and calling providerRegistry.register().
+ */
+
 import { EvolutionProvider } from './evolution';
 import { GenericServerProvider } from './generic-server';
-import type { MessagingProvider, ProviderType, ProviderCapabilities, GenericServerEndpoints, DeviceConfig } from './types';
-import type { RealtimeConnection } from '../realtime/types';
 import { EvolutionRealtimeConnection } from '../realtime/evolution-realtime';
 import { GenericServerRealtimeConnection } from '../realtime/generic-server-realtime';
+import {
+  providerRegistry,
+  createProvider,
+  createRealtimeConnection,
+} from './registry';
+import type { DeviceConfig } from './types';
 
-export function createProvider(type: ProviderType, apiUrl: string, instanceToken: string, capabilities?: Partial<ProviderCapabilities>, endpoints?: GenericServerEndpoints): MessagingProvider {
-  if (type === 'evolution') return new EvolutionProvider(apiUrl, instanceToken, capabilities);
-  if (type === 'generic-server') return new GenericServerProvider(apiUrl, instanceToken, capabilities, endpoints);
-  throw new Error(`Unknown provider: ${type}`);
-}
+// ─── Register Built-in Providers ────────────────────────────────────────────
 
-function deriveWsUrl(apiUrl: string): string {
-  return apiUrl.replace(/^http/, 'ws');
-}
+/**
+ * Evolution API provider (WhatsApp via Evolution API v2)
+ */
+providerRegistry.register('evolution', {
+  createProvider: (apiUrl, instanceToken, capabilities) =>
+    new EvolutionProvider(apiUrl, instanceToken, capabilities),
 
-export function createRealtimeConnection(device: DeviceConfig): RealtimeConnection {
-  const type = device.providerType || 'evolution';
-  const wsConfig = device.websocket;
-
-  if (type === 'evolution') {
-    const wsUrl = wsConfig?.url || `${deriveWsUrl(device.apiUrl)}/{instanceName}`;
+  createRealtime: (device: DeviceConfig) => {
+    const wsConfig = device.websocket;
+    const wsUrl = wsConfig?.url || `${deriveWsUrl(device.apiUrl)}/${device.instanceName}`;
     return new EvolutionRealtimeConnection(wsUrl, device.instanceName, device.instanceToken, device.id);
-  }
+  },
+});
 
-  if (type === 'generic-server') {
+/**
+ * Generic server provider (normalized messaging API)
+ */
+providerRegistry.register('generic-server', {
+  createProvider: (apiUrl, instanceToken, capabilities, endpoints) =>
+    new GenericServerProvider(apiUrl, instanceToken, capabilities, endpoints),
+
+  createRealtime: (device: DeviceConfig) => {
+    const wsConfig = device.websocket;
     const defaultWsPath = device.endpoints?.ws || `ws://${new URL(device.apiUrl).host}/ws/channels/{channelId}`;
     let wsUrl: string;
+
     if (wsConfig?.url) {
       wsUrl = wsConfig.url;
     } else if (device.endpoints?.ws) {
-      // Custom endpoint template — resolve relative to apiUrl
       const base = deriveWsUrl(device.apiUrl);
       const template = device.endpoints.ws;
       // If template starts with /, prepend base
@@ -43,13 +60,28 @@ export function createRealtimeConnection(device: DeviceConfig): RealtimeConnecti
     }
 
     return new GenericServerRealtimeConnection(wsUrl, device.instanceName, device.instanceToken, device.id);
-  }
+  },
+});
 
-  throw new Error(`Unknown provider type for realtime: ${type}`);
+// ─── Helper ───────────────────────────────────────────────────────────────
+
+function deriveWsUrl(apiUrl: string): string {
+  return apiUrl.replace(/^http/, 'ws');
 }
 
-export type { MessagingProvider, WhatsAppProvider, ProviderType, DeleteMessageParams, ProviderCapabilities, GenericServerEndpoints } from './types';
+// ─── Re-exports ────────────────────────────────────────────────────────────
+
+// Export registry for external provider registration
+export { providerRegistry, createProvider, createRealtimeConnection };
+
+// Export types
 export type {
+  MessagingProvider,
+  WhatsAppProvider,
+  ProviderType,
+  DeleteMessageParams,
+  ProviderCapabilities,
+  GenericServerEndpoints,
   Chat,
   Message,
   SendTextParams,
