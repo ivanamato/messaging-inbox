@@ -216,7 +216,7 @@ export function useMessageThread({
     if (conversationId && instance) {
       setLoading(true);
       fetchInitialMessages();
-      if (provider.capabilities.markAsRead) {
+      if (provider.capabilities.markAsRead && (selectedDevice?.autoRead !== false)) {
         provider.markChatAsRead(instance, conversationId).catch(() => {});
       }
     }

@@ -342,6 +342,21 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
     [conversations],
   );
 
+  /** Optimistically set unreadCount to 0 for the given chat (used after markChatAsRead). */
+  const clearUnread = useCallback((chatId: string, deviceId?: string) => {
+    setConversations(prev => {
+      const idx = prev.findIndex(c =>
+        deviceId
+          ? c.id === chatId && c.deviceId === deviceId
+          : c.id === chatId,
+      );
+      if (idx < 0 || (prev[idx].unreadCount ?? 0) === 0) return prev;
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], unreadCount: 0 };
+      return updated;
+    });
+  }, []);
+
   return {
     conversations,
     filteredConversations,
@@ -357,5 +372,6 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
     tagMap,
     isPolling,
     findByPhoneNumber,
+    clearUnread,
   };
 }

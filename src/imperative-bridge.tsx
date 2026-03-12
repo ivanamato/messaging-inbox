@@ -3,7 +3,7 @@ import { useProvider, useDeviceContext } from '@/lib/provider-context';
 import { App } from '@/App';
 import { ErrorBoundary } from '@/components/error-boundary';
 import type { ConversationListRef } from '@/components/conversation-list';
-import type { Chat, Message, SendResult, SendTextParams, ChatActionsResolver, ChatTagsResolver, BulkChatTagsResolver } from '@/lib/providers/types';
+import type { Chat, Message, SendResult, SendTextParams, ChatActionsResolver, ChatTagsResolver, BulkChatTagsResolver, DeviceConfig } from '@/lib/providers/types';
 
 export type ImperativeApi = {
   getChats: () => Promise<Chat[]>;
@@ -16,6 +16,7 @@ export type ImperativeApi = {
   openChat: (phoneNumber: string, options?: { prefillMessage?: string; deviceId?: string }) => void;
   setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
   setWebSocketEnabledAll: (enabled: boolean) => void;
+  updateDevice: (deviceId: string, patch: Partial<DeviceConfig>) => void;
 };
 
 type Props = {
@@ -27,7 +28,7 @@ type Props = {
 export const ImperativeApiBridge = forwardRef<ImperativeApi, Props>(
   ({ chatActions, chatTags, chatTagsBulk }, ref) => {
     const provider = useProvider();
-    const { selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, setWebSocketEnabled: ctxSetWs } = useDeviceContext();
+    const { selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, setWebSocketEnabled: ctxSetWs, updateDevice: ctxUpdateDevice } = useDeviceContext();
     const conversationListRef = useRef<ConversationListRef>(null);
     const [prefillToken, setPrefillToken] = useState<{ id: number; message: string } | null>(null);
     const prefillCounterRef = useRef(0);
@@ -126,7 +127,10 @@ export const ImperativeApiBridge = forwardRef<ImperativeApi, Props>(
           ctxSetWs(device.id, enabled);
         }
       },
-    }), [provider, selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, ctxSetWs]);
+      updateDevice: (deviceId: string, patch: Partial<DeviceConfig>) => {
+        ctxUpdateDevice(deviceId, patch);
+      },
+    }), [provider, selectedDevice, selectDevice, devices, getProviderForDevice, viewMode, ctxSetWs, ctxUpdateDevice]);
 
     return (
       <ErrorBoundary>

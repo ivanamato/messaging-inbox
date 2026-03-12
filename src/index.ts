@@ -39,6 +39,8 @@ export type WhatsAppInbox = {
   setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
   /** Enable or disable WebSocket real-time updates for all devices at runtime. */
   setWebSocketEnabledAll: (enabled: boolean) => void;
+  /** Update a device's configuration at runtime. Triggers provider and WebSocket reconnection as needed. */
+  updateDevice: (deviceId: string, patch: Partial<import('./lib/providers/types').DeviceConfig>) => void;
   unmount: () => void;
 };
 
@@ -80,6 +82,7 @@ export function mount(element: HTMLElement, config: WhatsAppMultiDeviceConfig): 
     openChat: (phoneNumber, options?) => getBridge().openChat(phoneNumber, options),
     setWebSocketEnabled: (deviceId, enabled) => getBridge().setWebSocketEnabled(deviceId, enabled),
     setWebSocketEnabledAll: (enabled) => getBridge().setWebSocketEnabledAll(enabled),
+    updateDevice: (deviceId, patch) => getBridge().updateDevice(deviceId, patch),
     unmount: () => {
       root.unmount();
       roots.delete(element);

@@ -1,4 +1,4 @@
-import { useRef, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { format, isValid, isToday, isYesterday } from 'date-fns';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { RefreshCw, Search } from 'lucide-react';
@@ -69,6 +69,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
     availableTags,
     tagMap,
     isPolling,
+    clearUnread,
   } = useChatList({ instance, chatTags, chatTagsBulk });
 
   const handleRefresh = () => { refresh(); };
@@ -82,6 +83,20 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   const canInitiateChat = selectedDevice
     ? resolveInitiationCapability(getEffectiveCaps(selectedDevice)).canInitiate
     : true;
+
+  /** Select a conversation and optimistically clear its unread badge when autoRead is on. */
+  const selectAndClearUnread = useCallback((conversation: Conversation) => {
+    onSelectConversation(conversation);
+    const device = conversation.deviceId
+      ? devices.find(d => d.id === conversation.deviceId)
+      : selectedDevice;
+    if (device && device.autoRead !== false) {
+      const provider = getProviderForDevice(device);
+      if (provider.capabilities.markAsRead) {
+        clearUnread(conversation.id, conversation.deviceId);
+      }
+    }
+  }, [onSelectConversation, devices, selectedDevice, getProviderForDevice, clearUnread]);
 
   useImperativeHandle(ref, () => ({
     refresh,
@@ -278,7 +293,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
                   data-chat-name={conversation.contactName || conversation.phoneNumber}
                   data-index={virtualRow.index}
                   ref={rowVirtualizer.measureElement}
-                  onClick={() => onSelectConversation(conversation)}
+                  onClick={() => selectAndClearUnread(conversation)}
                   className={cn(
                     'wa-chat-row wa:w-full wa:text-left wa:transition-colors wa:relative wa:overflow-hidden wa:flex wa:items-center wa:cursor-pointer',
                     'hover:wa:bg-[#f5f6f6]',

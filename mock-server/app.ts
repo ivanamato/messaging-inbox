@@ -249,9 +249,6 @@ app.post('/chat/findMessages/:instance', async (c) => {
   const remoteJid = where?.key?.remoteJid;
   if (!remoteJid) return c.json({ messages: { records: [] } });
 
-  // Opening a chat → mark as read (clears unread count)
-  store.clearUnread(instance, remoteJid);
-
   const baseMessages: EvolutionMessageFixture[] = fixtures.messagesByJid[remoteJid] ?? [];
   const storedMsgs = store.getMessagesForJid(instance, remoteJid);
   const deletedIds = store.deletedIds(instance);

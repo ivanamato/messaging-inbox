@@ -37,6 +37,8 @@ export type Translations = {
   'instanceSelector.connected': string;
   'instanceSelector.close': string;
   'instanceSelector.mergeDevices': string;
+  'instanceSelector.configureDevice': string;
+  'instanceSelector.save': string;
 
   // Message context menu
   'contextMenu.messageOptions': string;
@@ -143,6 +145,8 @@ export const defaultTranslations: Translations = {
   'instanceSelector.connected': 'connected',
   'instanceSelector.close': 'Close',
   'instanceSelector.mergeDevices': 'Merge devices',
+  'instanceSelector.configureDevice': 'Configure device',
+  'instanceSelector.save': 'Save',
 
   // Message context menu
   'contextMenu.messageOptions': 'Message options',

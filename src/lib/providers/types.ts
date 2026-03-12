@@ -113,6 +113,8 @@ export type DeviceConfig = {
   capabilities?: Partial<ProviderCapabilities>;
   /** Custom endpoint map for generic-server provider. Ignored for evolution provider. */
   endpoints?: GenericServerEndpoints;
+  /** Automatically mark chats as read when opened. Default: true. */
+  autoRead?: boolean;
   /** WebSocket real-time configuration. When enabled, the inbox receives push updates instead of polling. */
   websocket?: {
     enabled: boolean;

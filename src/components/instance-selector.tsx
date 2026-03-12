@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { ChevronDown, WifiOff, Loader2, Check, XIcon } from 'lucide-react';
+import { ChevronDown, WifiOff, Loader2, Check, XIcon, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { useDeviceContext } from '@/lib/provider-context';
@@ -13,9 +13,10 @@ type Props = {
 };
 
 export function InstanceSelector({ onDeviceChange }: Props) {
-  const { devices, selectedDevice, selectDevice, viewMode, setViewMode } = useDeviceContext();
+  const { devices, selectedDevice, selectDevice, viewMode, setViewMode, updateDevice } = useDeviceContext();
   const t = useTranslations();
   const [open, setOpen] = useState(false);
+  const [configuringDevice, setConfiguringDevice] = useState<DeviceConfig | null>(null);
 
   const { statuses, initialLoad, connectedCount } = useDeviceStatus();
 
@@ -60,6 +61,7 @@ export function InstanceSelector({ onDeviceChange }: Props) {
         {/* Single mode: device picker button */}
         {viewMode === 'single' ? (
           <button
+            data-testid="device-picker"
             onClick={() => setOpen(true)}
             className="wa:flex wa:flex-1 wa:items-center wa:justify-center wa:gap-3 wa:px-4 wa:py-3 wa:rounded-lg hover:wa:bg-white/10 wa:transition-colors wa:min-w-0"
           >
@@ -89,24 +91,35 @@ export function InstanceSelector({ onDeviceChange }: Props) {
       </div>
 
       {open && viewMode === 'single' && (
-        <SimpleModal onClose={() => setOpen(false)}>
-          <div className="wa:mb-2 wa:flex wa:flex-col wa:gap-2 wa:text-center">
-            <h2 className="wa:text-lg wa:leading-none wa:font-semibold wa:text-[#e9edef]">{t('instanceSelector.selectDevice')}</h2>
-          </div>
-          <div className="wa:flex wa:flex-col wa:gap-3">
-            {devices.map((device) => (
-              <DeviceOption
-                key={device.id}
-                device={device}
-                status={statuses[device.id] || 'close'}
-                isSelected={selectedDevice?.id === device.id}
-                onSelect={() => {
-                  selectDevice(device.id);
-                  setOpen(false);
-                }}
-              />
-            ))}
-          </div>
+        <SimpleModal onClose={() => { setOpen(false); setConfiguringDevice(null); }}>
+          {configuringDevice ? (
+            <DeviceConfigPanel
+              device={configuringDevice}
+              onSave={(patch) => updateDevice(configuringDevice.id, patch)}
+              onBack={() => setConfiguringDevice(null)}
+            />
+          ) : (
+            <>
+              <div className="wa:mb-2 wa:flex wa:flex-col wa:gap-2 wa:text-center">
+                <h2 className="wa:text-lg wa:leading-none wa:font-semibold wa:text-[#e9edef]">{t('instanceSelector.selectDevice')}</h2>
+              </div>
+              <div className="wa:flex wa:flex-col wa:gap-3">
+                {devices.map((device) => (
+                  <DeviceOption
+                    key={device.id}
+                    device={device}
+                    status={statuses[device.id] || 'close'}
+                    isSelected={selectedDevice?.id === device.id}
+                    onSelect={() => {
+                      selectDevice(device.id);
+                      setOpen(false);
+                    }}
+                    onConfigure={() => setConfiguringDevice(device)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </SimpleModal>
       )}
     </>
@@ -155,15 +168,16 @@ function DeviceOption({
   status,
   isSelected,
   onSelect,
+  onConfigure,
 }: {
   device: DeviceConfig;
   status: DeviceStatus;
   isSelected: boolean;
   onSelect: () => void;
+  onConfigure: () => void;
 }) {
   return (
-    <button
-      onClick={onSelect}
+    <div
       className={cn(
         'wa:w-full wa:flex wa:items-center wa:gap-3 wa:px-4 wa:py-3.5 wa:rounded-lg wa:transition-colors',
         isSelected
@@ -171,25 +185,35 @@ function DeviceOption({
           : 'wa:bg-[#233138] hover:wa:bg-[#2a3942] wa:border wa:border-transparent'
       )}
     >
-      <StatusDot status={status} />
-      {device.icon && (
-        <img src={device.icon} alt="" data-testid="device-option-icon" className="wa:h-5 wa:w-5 wa:flex-shrink-0 wa:object-contain" />
-      )}
-      <div className="wa:flex-1 wa:min-w-0 wa:text-left">
-        <p className="wa:text-base wa:font-medium wa:text-[#e9edef] wa:truncate">
-          {device.label || device.instanceName}
-        </p>
-        {device.label && (
-          <p className="wa:text-xs wa:text-[#8696a0] wa:truncate">{device.instanceName}</p>
+      <button onClick={onSelect} className="wa:flex wa:flex-1 wa:items-center wa:gap-3 wa:min-w-0">
+        <StatusDot status={status} />
+        {device.icon && (
+          <img src={device.icon} alt="" data-testid="device-option-icon" className="wa:h-5 wa:w-5 wa:flex-shrink-0 wa:object-contain" />
         )}
-      </div>
-      <Badge variant="outline" className="wa:text-xs wa:px-2 wa:py-0.5 wa:h-5 wa:uppercase wa:flex-shrink-0 wa:text-[#8696a0] wa:border-[#8696a0]/40">
-        {(device.providerType || 'evolution') === 'evolution' ? 'EVO' : 'GEN'}
-      </Badge>
-      {isSelected && (
-        <Check className="wa:h-5 wa:w-5 wa:text-[#00a884] wa:flex-shrink-0" />
-      )}
-    </button>
+        <div className="wa:flex-1 wa:min-w-0 wa:text-left">
+          <p className="wa:text-base wa:font-medium wa:text-[#e9edef] wa:truncate">
+            {device.label || device.instanceName}
+          </p>
+          {device.label && (
+            <p className="wa:text-xs wa:text-[#8696a0] wa:truncate">{device.instanceName}</p>
+          )}
+        </div>
+        <Badge variant="outline" className="wa:text-xs wa:px-2 wa:py-0.5 wa:h-5 wa:uppercase wa:flex-shrink-0 wa:text-[#8696a0] wa:border-[#8696a0]/40">
+          {(device.providerType || 'evolution') === 'evolution' ? 'EVO' : 'GEN'}
+        </Badge>
+        {isSelected && (
+          <Check className="wa:h-5 wa:w-5 wa:text-[#00a884] wa:flex-shrink-0" />
+        )}
+      </button>
+      <button
+        data-testid="device-configure"
+        onClick={onConfigure}
+        className="wa:p-1.5 wa:rounded-md wa:text-[#8696a0] hover:wa:text-[#e9edef] hover:wa:bg-white/10 wa:transition-colors wa:flex-shrink-0"
+        title="Configure device"
+      >
+        <Settings className="wa:h-4 wa:w-4" />
+      </button>
+    </div>
   );
 }
 
@@ -217,6 +241,61 @@ function ViewModeToggle({ viewMode, onViewModeChange }: { viewMode: ViewMode; on
       </button>
       <span className="wa:text-xs wa:text-[#8696a0] wa:whitespace-nowrap">{t('instanceSelector.mergeDevices')}</span>
     </label>
+  );
+}
+
+function DeviceConfigPanel({
+  device,
+  onSave,
+  onBack,
+}: {
+  device: DeviceConfig;
+  onSave: (patch: Partial<DeviceConfig>) => void;
+  onBack: () => void;
+}) {
+  const [autoRead, setAutoRead] = useState(device.autoRead !== false);
+
+  const labelClass = 'wa:text-xs wa:font-medium wa:text-[#8696a0] wa:uppercase wa:tracking-wide';
+
+  return (
+    <div data-testid="device-config-panel" className="wa:flex wa:flex-col wa:gap-4">
+      <div className="wa:flex wa:items-center wa:gap-3">
+        <button onClick={onBack} className="wa:text-[#8696a0] hover:wa:text-[#e9edef] wa:transition-colors">
+          <ChevronDown className="wa:h-5 wa:w-5 wa:rotate-90" />
+        </button>
+        <h2 className="wa:text-lg wa:font-semibold wa:text-[#e9edef]">
+          {device.label || device.instanceName}
+        </h2>
+        <Badge variant="outline" className="wa:text-xs wa:px-2 wa:py-0.5 wa:h-5 wa:uppercase wa:text-[#8696a0] wa:border-[#8696a0]/40">
+          {(device.providerType || 'evolution') === 'evolution' ? 'EVO' : 'GEN'}
+        </Badge>
+      </div>
+
+      <div className="wa:flex wa:flex-col wa:gap-3">
+        <div className="wa:flex wa:items-center wa:justify-between">
+          <label className={labelClass}>Auto-read</label>
+          <button
+            data-testid="auto-read-toggle"
+            role="switch"
+            aria-checked={autoRead}
+            onClick={() => {
+              const next = !autoRead;
+              setAutoRead(next);
+              onSave({ autoRead: next });
+            }}
+            className={cn(
+              'wa:relative wa:inline-flex wa:h-5 wa:w-9 wa:items-center wa:rounded-full wa:transition-colors wa:flex-shrink-0',
+              autoRead ? 'wa:bg-[#00a884]' : 'wa:bg-[#3b4a54]'
+            )}
+          >
+            <span className={cn(
+              'wa:inline-block wa:h-3.5 wa:w-3.5 wa:rounded-full wa:bg-white wa:transition-transform',
+              autoRead ? 'wa:translate-x-[18px]' : 'wa:translate-x-[3px]'
+            )} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

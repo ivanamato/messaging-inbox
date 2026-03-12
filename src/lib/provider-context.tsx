@@ -55,13 +55,14 @@ export type DeviceContextValue = {
   eventBus: RealtimeEventBus | null;
   realtimeStates: Record<string, RealtimeConnectionState>;
   setWebSocketEnabled: (deviceId: string, enabled: boolean) => void;
+  updateDevice: (deviceId: string, patch: Partial<DeviceConfig>) => void;
 };
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
 const ProviderContext = createContext<MessagingProvider | null>(null);
 
 export function ProviderProvider({ config, children }: PropsWithChildren<{ config: WhatsAppMultiDeviceConfig }>) {
-  const { devices } = config;
+  const [devices, setDevices] = useState<DeviceConfig[]>(config.devices);
 
   const debugStore = useMemo(
     () => config.debug ? new DebugStore() : null,
@@ -108,12 +109,27 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
   const connectionsRef = useRef<Map<string, RealtimeConnection>>(new Map());
   const [realtimeStates, setRealtimeStates] = useState<Record<string, RealtimeConnectionState>>({});
 
+  // Stable key: only changes when device IDs or websocket config change (not on config patches like autoRead).
+  // This prevents tearing down and reconnecting all WS connections on every config update.
+  const wsDeviceKey = useMemo(() =>
+    devices
+      .filter(d => d.websocket?.enabled)
+      .map(d => `${d.id}:${d.websocket?.url ?? ''}`)
+      .join('|'),
+    [devices],
+  );
+
+  // Use a ref for devices so the WS setup effect can read the latest list without depending on it.
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
+
   // Initialize connections for devices with websocket.enabled
   useEffect(() => {
     const connections = connectionsRef.current;
+    const currentDevices = devicesRef.current;
     const activeDeviceIds = new Set<string>();
 
-    for (const device of devices) {
+    for (const device of currentDevices) {
       if (device.websocket?.enabled) {
         activeDeviceIds.add(device.id);
         if (!connections.has(device.id)) {
@@ -188,7 +204,8 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
       }
       connections.clear();
     };
-  }, [devices, eventBus, debugStore]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsDeviceKey, eventBus, debugStore]);
 
   const setWebSocketEnabled = useCallback((deviceId: string, enabled: boolean) => {
     const connections = connectionsRef.current;
@@ -255,6 +272,10 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
     }
   }, [devices, eventBus, debugStore]);
 
+  const updateDevice = useCallback((deviceId: string, patch: Partial<DeviceConfig>) => {
+    setDevices(prev => prev.map(d => d.id === deviceId ? { ...d, ...patch } : d));
+  }, []);
+
   const deviceContextValue = useMemo<DeviceContextValue>(() => ({
     devices,
     selectedDevice,
@@ -266,7 +287,8 @@ export function ProviderProvider({ config, children }: PropsWithChildren<{ confi
     eventBus,
     realtimeStates,
     setWebSocketEnabled,
-  }), [devices, selectedDevice, selectDevice, getProviderForDeviceFn, isReadonly, viewMode, eventBus, realtimeStates, setWebSocketEnabled]);
+    updateDevice,
+  }), [devices, selectedDevice, selectDevice, getProviderForDeviceFn, isReadonly, viewMode, eventBus, realtimeStates, setWebSocketEnabled, updateDevice]);
 
   return (
     <TranslationsProvider translations={config.translations}>
