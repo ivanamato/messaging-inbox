@@ -1,3 +1,10 @@
+/**
+ * Evolution API mock server routes.
+ *
+ * Route handlers are thin orchestrators that delegate to services.
+ * Business logic lives in ./services/ following Single Responsibility Principle.
+ */
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import {
@@ -8,13 +15,24 @@ import {
   type InstanceFixtures,
 } from './fixtures.js';
 import { store } from './store.js';
+import {
+  JidResolver,
+  ContactNameResolver,
+  ChatMerger,
+  DeliveryScheduler,
+} from './services/index.js';
+import { PAGINATION, VALID_TOKENS } from './config/index.js';
 
-const MESSAGES_PER_PAGE = 20;
-const VALID_TOKENS = new Set(['mock-token-123', 'mock-token-456']);
+// ── Service initialization ────────────────────────────────────────────────────
+
+const jidResolver = new JidResolver();
+const contactNameResolver = new ContactNameResolver(store);
+const chatMerger = new ChatMerger(store, contactNameResolver);
+const deliveryScheduler = new DeliveryScheduler(store, contactNameResolver);
+
+// ── App setup ─────────────────────────────────────────────────────────────────
 
 export const app = new Hono();
-
-// ── CORS ──────────────────────────────────────────────────────────────────────
 
 app.use('*', cors({
   origin: '*',
@@ -22,7 +40,7 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'apikey', 'Authorization'],
 }));
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth middleware ───────────────────────────────────────────────────────────
 
 app.use('*', async (c, next) => {
   if (c.req.method === 'OPTIONS') return next();
@@ -39,87 +57,15 @@ function getFixtures(instance: string): InstanceFixtures | null {
   return fixturesByInstance[instance] ?? null;
 }
 
-// Reconstruct the full JID from a bare number (strips @suffix before comparison).
-// The real Evolution API receives stripped numbers (e.g. "120363012345678901" for a group)
-// and the mock must restore the correct suffix (@g.us, @s.whatsapp.net, @lid).
-function resolveJid(number: string, fixtures: InstanceFixtures): string {
-  if (number.includes('@')) return number;
-  const allJids = [
-    ...fixtures.chats.map((c) => c.remoteJid),
-    ...Object.keys(fixtures.messagesByJid),
-  ];
-  const match = allJids.find((jid) => jid.split('@')[0] === number);
-  if (match) return match;
-  return `${number}@s.whatsapp.net`;
-}
-
-function getContactName(instance: string, jid: string, fixtures: InstanceFixtures): string {
-  const dynContact = store.getContact(instance, jid);
-  if (dynContact?.pushName) return dynContact.pushName;
-  const fixtureContact = fixtures.contacts.find((c) => c.remoteJid === jid);
-  if (fixtureContact?.pushName) return fixtureContact.pushName;
-  const chat = fixtures.chats.find((c) => c.remoteJid === jid);
-  if (chat?.name) return chat.name;
-  return jid.split('@')[0];
-}
-
-function scheduleDelivery(
-  instance: string,
-  id: string,
-  jid: string,
-  fixtures: InstanceFixtures,
-): void {
-  // Realistic status progression: PENDING → SERVER_ACK → DELIVERY_ACK → READ
-  setTimeout(() => store.updateMessageStatus(instance, id, 'SERVER_ACK'), 300);
-  setTimeout(() => store.updateMessageStatus(instance, id, 'DELIVERY_ACK'), 1500);
-
-  const replyDelay = 2000 + Math.random() * 1000;
-  setTimeout(() => {
-    // Mark as READ right before the reply (they read it then typed)
-    store.updateMessageStatus(instance, id, 'READ');
-
-    const replyId = `reply-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const isGroup = jid.endsWith('@g.us');
-
-    if (isGroup) {
-      // Pick a random participant from fixture group messages
-      const groupMsgs = fixtures.messagesByJid[jid] ?? [];
-      const participants = [
-        ...new Set(
-          groupMsgs
-            .filter((m) => !m.key.fromMe && m.key.participant)
-            .map((m) => m.key.participant!),
-        ),
-      ];
-      const participant =
-        participants[Math.floor(Math.random() * participants.length)] ??
-        '5511999999999@s.whatsapp.net';
-      const pushName =
-        fixtures.contacts.find((c) => c.remoteJid === participant)?.pushName ?? 'Group Member';
-      store.addMessage(instance, {
-        key: { remoteJid: jid, fromMe: false, id: replyId, participant },
-        pushName,
-        messageType: 'conversation',
-        messageTimestamp: Math.floor(Date.now() / 1000),
-        message: { conversation: 'Example response' },
-      });
-    } else {
-      store.addMessage(instance, {
-        key: { remoteJid: jid, fromMe: false, id: replyId },
-        pushName: getContactName(instance, jid, fixtures),
-        messageType: 'conversation',
-        messageTimestamp: Math.floor(Date.now() / 1000),
-        message: { conversation: 'Example response' },
-      });
-    }
-  }, replyDelay);
+function notFound(c: typeof app) {
+  return c.json({ error: 'Instance not found' }, 404);
 }
 
 // ── Connection State ──────────────────────────────────────────────────────────
 
 app.get('/instance/connectionState/:instance', (c) => {
   const instance = c.req.param('instance');
-  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  if (!getFixtures(instance)) return notFound(c);
   return c.json(connectionState);
 });
 
@@ -128,77 +74,17 @@ app.get('/instance/connectionState/:instance', (c) => {
 app.post('/chat/findChats/:instance', (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
-  const deletedIds = store.deletedIds(instance);
-
-  // Build map of jid → latest dynamic message (exclude system/reaction messages as lastMessage)
-  const latestByJid = new Map<string, EvolutionMessageFixture>();
-  for (const msg of store.getAllMessages(instance)) {
-    if (deletedIds.has(msg.key.id)) continue;
-    if (msg.messageType === 'protocolMessage') continue;
-    if (msg.messageType === 'reactionMessage') continue;
-    const jid = msg.key.remoteJid;
-    const existing = latestByJid.get(jid);
-    if (!existing || (msg.messageTimestamp ?? 0) > (existing.messageTimestamp ?? 0)) {
-      latestByJid.set(jid, msg);
-    }
-  }
-
-  const fixtureJids = new Set(fixtures.chats.map((c) => c.remoteJid));
-
-  // Update fixture chats with dynamic state
-  const updatedChats = fixtures.chats.map((chat) => {
-    const latestDynamic = latestByJid.get(chat.remoteJid);
-    const fixtureTs = chat.lastMessage?.messageTimestamp ?? 0;
-    const dynamicTs = latestDynamic?.messageTimestamp ?? 0;
-
-    const lastMessage = dynamicTs > fixtureTs ? latestDynamic : chat.lastMessage;
-    const updatedAt =
-      dynamicTs > fixtureTs
-        ? new Date(dynamicTs * 1000).toISOString()
-        : chat.updatedAt;
-
-    // Unread: if last message is ours, 0; otherwise fixture base + pending dynamic
-    const lastIsFromMe = lastMessage?.key?.fromMe ?? false;
-    const baseUnread = store.hasBeenCleared(instance, chat.remoteJid) ? 0 : chat.unreadCount;
-    const pendingUnread = store.getPendingUnread(instance, chat.remoteJid);
-    const unreadCount = lastIsFromMe ? 0 : baseUnread + pendingUnread;
-
-    return { ...chat, lastMessage, updatedAt, unreadCount };
-  });
-
-  // Create new chats for JIDs that exist only in the store (sent to unknown contacts)
-  for (const [jid, msg] of latestByJid) {
-    if (fixtureJids.has(jid)) continue;
-    const name = getContactName(instance, jid, fixtures);
-    const pendingUnread = store.getPendingUnread(instance, jid);
-    const unreadCount = msg.key.fromMe ? 0 : pendingUnread;
-    updatedChats.push({
-      id: jid,
-      remoteJid: jid,
-      name,
-      pushName: name,
-      profilePicUrl: undefined,
-      unreadCount,
-      updatedAt: new Date((msg.messageTimestamp ?? 0) * 1000).toISOString(),
-      lastMessage: msg,
-    });
-  }
-
-  // Sort by most recent first
-  updatedChats.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  );
-
-  return c.json(updatedChats);
+  const chats = chatMerger.merge(instance, fixtures);
+  return c.json(chats);
 });
 
-// ── Test reset — wipe in-memory state for an instance ────────────────────────
+// ── Test reset ────────────────────────────────────────────────────────────────
 
 app.post('/test/reset/:instance', (c) => {
   const instance = c.req.param('instance');
-  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  if (!getFixtures(instance)) return notFound(c);
   store.reset(instance);
   return new Response(null, { status: 204 });
 });
@@ -208,9 +94,8 @@ app.post('/test/reset/:instance', (c) => {
 app.post('/chat/findContacts/:instance', (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
-  // Merge fixture contacts + dynamic contacts (dynamic takes priority for same JID)
   const contactMap = new Map(fixtures.contacts.map((c) => [c.remoteJid, c]));
   for (const dc of store.getDynamicContacts(instance)) {
     contactMap.set(dc.remoteJid, dc);
@@ -223,7 +108,7 @@ app.post('/chat/findContacts/:instance', (c) => {
 app.post('/chat/findMessages/:instance', async (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
   const body = await c.req.json<{
     where?: { key?: { remoteJid?: string; id?: string } };
@@ -266,8 +151,8 @@ app.post('/chat/findMessages/:instance', async (c) => {
 
   // Case 2: paginated (page param present)
   if (typeof page === 'number') {
-    const pageSize = typeof offset === 'number' ? offset : MESSAGES_PER_PAGE;
-    const effectivePageSize = Math.min(pageSize, MESSAGES_PER_PAGE);
+    const pageSize = typeof offset === 'number' ? offset : PAGINATION.MESSAGES_PER_PAGE;
+    const effectivePageSize = Math.min(pageSize, PAGINATION.MESSAGES_PER_PAGE);
     const total = allMessages.length;
     const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
     const safePage = Math.max(1, Math.min(page, totalPages));
@@ -286,7 +171,8 @@ app.post('/chat/findMessages/:instance', async (c) => {
 
 app.put('/chat/markMessageAsRead/:instance', async (c) => {
   const instance = c.req.param('instance');
-  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  if (!getFixtures(instance)) return notFound(c);
+
   const body = await c.req.json<{ readMessages?: Array<{ remoteJid?: string }> }>();
   for (const entry of body.readMessages ?? []) {
     if (entry.remoteJid) store.clearUnread(instance, entry.remoteJid);
@@ -298,7 +184,7 @@ app.put('/chat/markMessageAsRead/:instance', async (c) => {
 
 app.post('/chat/getBase64FromMediaMessage/:instance', async (c) => {
   const instance = c.req.param('instance');
-  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  if (!getFixtures(instance)) return notFound(c);
 
   const body = await c.req.json<{
     message?: { key?: { id?: string }; message?: Record<string, unknown> };
@@ -330,11 +216,11 @@ app.post('/chat/getBase64FromMediaMessage/:instance', async (c) => {
 app.post('/message/sendText/:instance', async (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
   const body = await c.req.json<{ number: string; text: string }>();
   const id = `sent-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  const jid = resolveJid(body.number, fixtures);
+  const jid = jidResolver.resolve(body.number, fixtures);
 
   // Register unknown contacts so they appear in contact list and chat names resolve
   const knownInFixtures = fixtures.contacts.some((ct) => ct.remoteJid === jid);
@@ -354,7 +240,7 @@ app.post('/message/sendText/:instance', async (c) => {
     message: { conversation: body.text },
   });
 
-  scheduleDelivery(instance, id, jid, fixtures);
+  deliveryScheduler.schedule(instance, id, jid, fixtures);
   return c.json({ key: { id }, status: 'PENDING' });
 });
 
@@ -363,7 +249,7 @@ app.post('/message/sendText/:instance', async (c) => {
 app.post('/message/sendMedia/:instance', async (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
   const body = await c.req.json<{
     number: string;
@@ -376,7 +262,7 @@ app.post('/message/sendMedia/:instance', async (c) => {
   }>();
 
   const id = `sent-media-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  const jid = resolveJid(body.number, fixtures);
+  const jid = jidResolver.resolve(body.number, fixtures);
   const mediatype = body.mediatype?.toLowerCase() ?? 'document';
   const mimetype =
     body.mimetype ??
@@ -413,7 +299,7 @@ app.post('/message/sendMedia/:instance', async (c) => {
     message: messageContent,
   });
 
-  scheduleDelivery(instance, id, jid, fixtures);
+  deliveryScheduler.schedule(instance, id, jid, fixtures);
   return c.json({ key: { id }, status: 'PENDING' });
 });
 
@@ -422,7 +308,7 @@ app.post('/message/sendMedia/:instance', async (c) => {
 app.post('/message/sendButtons/:instance', async (c) => {
   const instance = c.req.param('instance');
   const fixtures = getFixtures(instance);
-  if (!fixtures) return c.json({ error: 'Instance not found' }, 404);
+  if (!fixtures) return notFound(c);
 
   const body = await c.req.json<{
     number: string;
@@ -432,7 +318,7 @@ app.post('/message/sendButtons/:instance', async (c) => {
   }>();
 
   const id = `sent-btn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-  const jid = resolveJid(body.number, fixtures);
+  const jid = jidResolver.resolve(body.number, fixtures);
 
   store.addMessage(instance, {
     key: { remoteJid: jid, fromMe: true, id },
@@ -448,7 +334,7 @@ app.post('/message/sendButtons/:instance', async (c) => {
     },
   });
 
-  scheduleDelivery(instance, id, jid, fixtures);
+  deliveryScheduler.schedule(instance, id, jid, fixtures);
   return c.json({ key: { id }, status: 'PENDING' });
 });
 
@@ -456,7 +342,7 @@ app.post('/message/sendButtons/:instance', async (c) => {
 
 app.delete('/chat/deleteMessageForEveryone/:instance', async (c) => {
   const instance = c.req.param('instance');
-  if (!getFixtures(instance)) return c.json({ error: 'Instance not found' }, 404);
+  if (!getFixtures(instance)) return notFound(c);
 
   const body = await c.req.json<{ id: string; remoteJid: string; fromMe: boolean }>();
 

@@ -189,8 +189,8 @@ test.describe('openChat API', () => {
   });
 
   test('opens a blank thread on a specific device when phone is unknown there', async ({ page }) => {
-    // 19998887777 is unknown on device 2 as well
-    await page.evaluate(evalOpenChat, { phone: '19998887777', deviceId: 'mock-device-2' });
+    // 19998887777 is unknown - use device 1 which supports conversation initiation
+    await page.evaluate(evalOpenChat, { phone: '19998887777', deviceId: 'mock-device-1' });
     await thread.root.waitFor({ state: 'visible', timeout: 10000 });
     await expect(thread.allBubbles()).toHaveCount(0);
     await expect(thread.messageInput).toBeVisible();
