@@ -98,6 +98,7 @@ export function useMessageSender({
     const text = caption.trim();
     const optimisticId = `optimistic-${Date.now()}`;
     const mediaType = getMediaType(file.type);
+    const localBlobUrl = URL.createObjectURL(file);
 
     const optimisticMessage: Message = {
       ...createOptimisticMessage({
@@ -110,6 +111,7 @@ export function useMessageSender({
         caption: text || null,
         filename: file.name,
         mimeType: file.type,
+        mediaData: { url: localBlobUrl, contentType: file.type, filename: file.name },
       }),
       direction: 'outbound',
     };
@@ -148,6 +150,7 @@ export function useMessageSender({
     const text = caption.trim();
     const optimisticId = `optimistic-${Date.now()}`;
     const mediaType = getMediaType(file.type);
+    const localBlobUrl = URL.createObjectURL(file);
 
     const optimisticMessage: Message = {
       ...createOptimisticMessage({
@@ -160,6 +163,7 @@ export function useMessageSender({
         caption: text || null,
         filename: file.name,
         mimeType: file.type,
+        mediaData: { url: localBlobUrl, contentType: file.type, filename: file.name },
       }),
       direction: 'outbound',
     };
@@ -196,6 +200,7 @@ export function useMessageSender({
     if (!phoneNumber || !instance || sending) return;
 
     const optimisticId = `optimistic-${Date.now()}`;
+    const audioDataUrl = `data:${mimeType};base64,${base64}`;
     const optimisticMessage: Message = {
       ...createOptimisticMessage({
         id: optimisticId,
@@ -206,6 +211,7 @@ export function useMessageSender({
         messageType: 'audio',
         filename: 'voice.ogg',
         mimeType,
+        mediaData: { url: audioDataUrl, contentType: mimeType, filename: 'voice.ogg' },
       }),
       direction: 'outbound',
     };
@@ -247,11 +253,13 @@ export function useMessageSender({
 
     const filename = mediaType === 'image' ? 'image.jpg' : 'video.mp4';
     const optimisticId = `optimistic-${Date.now()}`;
+    const mediaDataUrl = `data:${mimeType};base64,${base64}`;
 
     const optimisticMessage: Message = {
       ...createOptimisticMediaMessage(phoneNumber, mediaType, label, mimeType),
       id: optimisticId,
       direction: 'outbound',
+      mediaData: { url: mediaDataUrl, contentType: mimeType, filename },
     };
 
     addOptimisticMessage(optimisticMessage);

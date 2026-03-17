@@ -44,6 +44,8 @@ export type UseVoiceRecordingParams = {
   provider: MessagingProvider;
   /** Called after message is successfully sent */
   onMessageSent?: () => void;
+  /** Callback to refresh messages after send */
+  refreshMessages: () => Promise<void>;
   /** Ref to signal scroll-to-bottom for new messages */
   isNearBottomRef: RefObject<boolean>;
   /** Callback to add optimistic message to thread */
@@ -67,6 +69,7 @@ export function useVoiceRecording({
   instance,
   provider,
   onMessageSent,
+  refreshMessages,
   isNearBottomRef,
   addOptimisticMessage,
 }: UseVoiceRecordingParams): VoiceRecordingState & VoiceRecordingActions {
@@ -120,15 +123,17 @@ export function useVoiceRecording({
 
         setRecordingState('processing');
         const blob = new Blob(chunks, { type: recorder.mimeType });
+        const audioBlobUrl = URL.createObjectURL(blob);
 
         try {
           const base64 = await readBlobAsBase64(blob);
           const optimisticId = `optimistic-${Date.now()}`;
 
-          // Create optimistic message via domain factory
+          // Create optimistic message via domain factory with local audio URL
           const optimisticMessage = {
             ...createOptimisticVoiceMessage(phoneNumber, blob.type, optimisticId),
             direction: 'outbound' as const,
+            mediaData: { url: audioBlobUrl, contentType: blob.type, filename: 'voice.ogg' },
           };
           addOptimisticMessage(optimisticMessage);
           isNearBottomRef.current = true;
@@ -142,6 +147,7 @@ export function useVoiceRecording({
             ptt: true,
           });
 
+          await refreshMessages();
           onMessageSent?.();
         } catch (error) {
           if (process.env.NODE_ENV !== 'production') {

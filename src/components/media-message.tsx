@@ -48,7 +48,21 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+
+    // Fallback: if IntersectionObserver doesn't fire (e.g. inside contain:strict
+    // scroll containers or when element is added already in viewport), trigger
+    // after a short delay.
+    const fallbackTimer = setTimeout(() => {
+      setIsVisible((prev) => {
+        if (!prev) observer.disconnect();
+        return true;
+      });
+    }, 500);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(fallbackTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -103,6 +117,15 @@ export function MediaMessage({ mediaId, messageType, caption, filename, isOutbou
 
   return (
     <div ref={containerRef}>
+      {messageType === 'sticker' && (
+        <img
+          src={sanitizeUrl(mediaUrl) ?? ''}
+          alt="Sticker"
+          className="wa:max-w-[150px] wa:max-h-[150px] wa:h-auto"
+          onError={handleLoadError}
+        />
+      )}
+
       {messageType === 'image' && (
         <img
           src={sanitizeUrl(mediaUrl) ?? ''}

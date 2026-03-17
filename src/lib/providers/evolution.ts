@@ -487,11 +487,15 @@ export class EvolutionProvider implements MessagingProvider {
   }
 
   async sendMedia(instanceName: string, params: SendMediaParams): Promise<SendResult> {
-    const data = await this.request<{ key: { id: string }; status?: string }>(
-      `/message/sendMedia/${encodeURIComponent(instanceName)}`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
+    // Use dedicated sendWhatsAppAudio endpoint for voice notes (PTT audio)
+    const isVoiceNote = params.ptt && params.mediaType === 'audio';
+    const endpoint = isVoiceNote
+      ? `/message/sendWhatsAppAudio/${encodeURIComponent(instanceName)}`
+      : `/message/sendMedia/${encodeURIComponent(instanceName)}`;
+
+    const payload = isVoiceNote
+      ? { number: params.to, audio: params.media }
+      : {
           number: params.to,
           mediatype: params.mediaType,
           media: params.media,
@@ -499,7 +503,13 @@ export class EvolutionProvider implements MessagingProvider {
           fileName: params.fileName || undefined,
           mimetype: params.mimeType || undefined,
           ptt: params.ptt ?? undefined,
-        }),
+        };
+
+    const data = await this.request<{ key: { id: string }; status?: string }>(
+      endpoint,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
       }
     );
 

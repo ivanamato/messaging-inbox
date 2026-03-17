@@ -204,6 +204,10 @@ export type Message = {
   filename?: string | null;
   mimeType?: string | null;
   metadata?: Record<string, unknown>;
+  /** ID of the message this is a reply to */
+  quotedMessageId?: string | null;
+  /** Preview content of the quoted message */
+  quotedContent?: string | null;
   /** Display name of the sender (from pushName). Shown above inbound message bubbles. */
   senderName?: string;
 };

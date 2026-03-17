@@ -21,6 +21,8 @@ export type CreateOptimisticMessageParams = {
   caption?: string | null;
   filename?: string | null;
   mimeType?: string | null;
+  /** Local blob URL for immediate media preview (before server confirms) */
+  mediaData?: { url: string; contentType?: string; filename?: string };
 };
 
 // ─── Factory Functions ────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ export function createOptimisticMessage(params: CreateOptimisticMessageParams): 
     caption = null,
     filename = null,
     mimeType = null,
+    mediaData,
   } = params;
 
   return {
@@ -50,6 +53,7 @@ export function createOptimisticMessage(params: CreateOptimisticMessageParams): 
     status: 'pending',
     phoneNumber,
     hasMedia,
+    ...(mediaData ? { mediaData } : {}),
     messageType,
     caption,
     reactionEmoji: null,

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react
 import { format, isValid, isToday, isYesterday } from 'date-fns';
 import { RefreshCw, Paperclip, Send, X, AlertCircle, MessageSquare, XCircle, ListTree, ArrowLeft, Loader2, Clock, Mic, Square, BookText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/relative-time';
 import { MediaMessage } from '@/components/media-message';
 import { AudioPlayer } from '@/components/audio-player';
 import { TemplateSelectorDialog } from '@/components/template-selector-dialog';
@@ -485,6 +486,7 @@ export function MessageView({ conversationId, phoneNumber, contactName, profileP
 
                   <div
                     data-testid="message-bubble"
+                    data-message-id={message.id}
                     data-direction={isOutbound ? 'outbound' : 'inbound'}
                     style={showTail ? { marginBottom: 6, marginTop: 6 } : { marginBottom: 6 }}
                     className={cn(
@@ -538,6 +540,28 @@ export function MessageView({ conversationId, phoneNumber, contactName, profileP
                             >
                               {message.senderName}
                             </p>
+                          )}
+                          {/* Quoted message preview */}
+                          {message.quotedMessageId && (
+                            <div
+                              onClick={() => {
+                                const target = document.querySelector(`[data-message-id="${message.quotedMessageId}"]`);
+                                if (target) {
+                                  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  target.classList.add('wa-highlight-flash');
+                                  setTimeout(() => target.classList.remove('wa-highlight-flash'), 1500);
+                                }
+                              }}
+                              style={{ margin: '-2px 0 4px', padding: '6px 10px', borderLeft: '3px solid #06cf9c', borderRadius: 4, cursor: 'pointer' }}
+                              className={cn(
+                                'wa:text-[12px] wa:leading-[16px] wa:line-clamp-2 wa:break-words',
+                                isOutbound ? 'wa:bg-[#c8f7cb]' : 'wa:bg-[#f0f0f0]',
+                              )}
+                            >
+                              <span className="wa:text-[#667781]">
+                                {message.quotedContent || t('messageView.quotedMessage')}
+                              </span>
+                            </div>
                           )}
                           {/* Media content */}
                           {message.hasMedia && message.mediaData?.url ? (
@@ -611,7 +635,11 @@ export function MessageView({ conversationId, phoneNumber, contactName, profileP
 
                       {/* Timestamp + delivery status */}
                       <div style={{ marginTop: '2px', gap: '3px' }} className="wa:flex wa:justify-end wa:items-center">
-                        <span className="wa:text-[11px] wa:text-[#667781] wa:leading-none wa:select-none">
+                        <span
+                          data-testid="message-time"
+                          title={formatRelativeTime(message.createdAt)}
+                          className="wa:text-[11px] wa:text-[#667781] wa:leading-none wa:select-none wa:cursor-default"
+                        >
                           {formatMessageTime(message.createdAt)}
                         </span>
                         {isOutbound && message.status && (

@@ -128,6 +128,7 @@ export function useMessageThread({
     instance,
     provider,
     onMessageSent,
+    refreshMessages: fetchInitialMessages,
     isNearBottomRef,
     addOptimisticMessage,
   });
@@ -179,7 +180,9 @@ export function useMessageThread({
 
   // ─── Auto-polling (fallback when WS not connected) ──────────────────────────
 
-  const wsConnected = selectedDevice ? realtimeStates[selectedDevice.id] === 'connected' : false;
+  const wsConnected = selectedDevice
+    ? (realtimeStates[selectedDevice.id] === 'connected' || realtimeStates[selectedDevice.id] === 'reconnecting')
+    : false;
 
   useAutoPolling({
     interval: 5000,
@@ -191,6 +194,7 @@ export function useMessageThread({
 
   useRealtimeEvents(eventBus, {
     type: ['message.new', 'message.updated', 'message.deleted'],
+    deviceId: selectedDevice?.id,
   }, useCallback((event) => {
     if (!conversationId) return;
 
@@ -198,6 +202,18 @@ export function useMessageThread({
       const { chatId, message } = event.payload;
       // Only process events for the currently viewed chat
       if (chatId !== conversationId && message.phoneNumber !== phoneNumber) return;
+
+      // Handle reaction messages: merge emoji into target message instead of adding
+      if (message.messageType === 'reaction' && message.reactedToMessageId) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === message.reactedToMessageId
+              ? { ...m, reactionEmoji: message.reactionEmoji || message.content || null }
+              : m,
+          ),
+        );
+        return;
+      }
 
       setMessages(prev => {
         // Deduplicate against optimistic messages and existing messages

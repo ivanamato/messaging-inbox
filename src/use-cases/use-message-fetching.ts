@@ -71,6 +71,27 @@ export function useMessageFetching({
       setHasMore(result.pagination.hasMore);
 
       setMessages(prev => {
+        // Collect mediaData from optimistic messages so we can carry it over
+        // to the server message that replaces them (prevents image flicker)
+        const optimisticMediaData = new Map<string, Message['mediaData']>();
+        for (const m of prev) {
+          if (m.id.startsWith('optimistic-') && m.mediaData?.url) {
+            optimisticMediaData.set(m.mediaData.url, m.mediaData);
+          }
+        }
+
+        // If there are optimistic messages with mediaData, try to carry it over
+        // to the newest server message with hasMedia that lacks mediaData
+        if (optimisticMediaData.size > 0) {
+          const recentOutbound = [...processed]
+            .reverse()
+            .find(m => m.direction === 'outbound' && m.hasMedia && !m.mediaData?.url);
+          if (recentOutbound) {
+            const [, md] = [...optimisticMediaData.entries()][0];
+            recentOutbound.mediaData = md;
+          }
+        }
+
         // Remove optimistic messages before reconciliation
         const withoutOptimistic = prev.filter(m => !m.id.startsWith('optimistic-'));
 

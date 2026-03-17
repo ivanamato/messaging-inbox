@@ -158,6 +158,15 @@
   clip-path: polygon(100% 0, 0 0, 100% 100%);
 }
 
+/* Quoted message scroll-to highlight */
+@keyframes wa-flash {
+  0% { background-color: rgba(0, 168, 132, 0.25); }
+  100% { background-color: transparent; }
+}
+.wa-highlight-flash {
+  animation: wa-flash 1.5s ease-out;
+}
+
 /* WhatsApp-style scrollbar */
 .wa-chat-bg [data-radix-scroll-area-viewport]::-webkit-scrollbar {
   width: 6px;
