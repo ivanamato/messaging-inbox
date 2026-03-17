@@ -8,10 +8,17 @@ type Props = {
   onError?: () => void;
 };
 
+const PLAYBACK_SPEEDS = [1, 1.5, 2] as const;
+type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -35,6 +42,7 @@ export function AudioPlayer({ src, isOutbound, onError }: Props) {
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [speed, setSpeed] = useState<PlaybackSpeed>(1);
   const [waveform] = useState(() => generateWaveform(src, 40));
 
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -83,11 +91,20 @@ export function AudioPlayer({ src, isOutbound, onError }: Props) {
     setCurrentTime(audio.currentTime);
   }, [duration]);
 
+  const cycleSpeed = useCallback(() => {
+    const nextIndex = (PLAYBACK_SPEEDS.indexOf(speed) + 1) % PLAYBACK_SPEEDS.length;
+    const nextSpeed = PLAYBACK_SPEEDS[nextIndex];
+    setSpeed(nextSpeed);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextSpeed;
+    }
+  }, [speed]);
+
   const displayTime = playing || currentTime > 0 ? currentTime : duration;
 
   return (
     <div data-testid="audio-player" className="wa:flex wa:items-center wa:gap-2 wa:min-w-[240px] wa:max-w-[320px]">
-      <audio ref={audioRef} src={src} preload="metadata" onError={onError} />
+      <audio ref={audioRef} src={src} preload="metadata" onError={onError} playbackRate={speed} />
 
       {/* Mic icon */}
       <div className={cn(
@@ -145,12 +162,29 @@ export function AudioPlayer({ src, isOutbound, onError }: Props) {
             style={{ left: `${progress * 100}%` }}
           />
         </div>
-        <span className={cn(
-          'wa:text-[11px] wa:leading-none',
-          isOutbound ? 'wa:text-[#4d8b4a]' : 'wa:text-[#8696a0]'
-        )}>
-          {formatTime(displayTime)}
-        </span>
+        <div className="wa:flex wa:items-center wa:justify-between">
+          <span className={cn(
+            'wa:text-[11px] wa:leading-none',
+            isOutbound ? 'wa:text-[#4d8b4a]' : 'wa:text-[#8696a0]'
+          )}>
+            {formatTime(displayTime)}
+            {duration > 0 && (playing || currentTime > 0) && (
+              <span> / {formatTime(duration)}</span>
+            )}
+          </span>
+          <button
+            data-testid="audio-speed-button"
+            onClick={cycleSpeed}
+            className={cn(
+              'wa:text-[11px] wa:font-medium wa:leading-none wa:px-1.5 wa:py-0.5 wa:rounded-full wa:transition-colors',
+              isOutbound
+                ? 'wa:text-[#4d8b4a] wa:bg-[#b3ddb1] hover:wa:bg-[#9dd09a]'
+                : 'wa:text-[#8696a0] wa:bg-[#e2e2e2] hover:wa:bg-[#d5d5d5]'
+            )}
+          >
+            {speed === 1 ? '1x' : speed === 1.5 ? '1.5x' : '2x'}
+          </button>
+        </div>
       </div>
     </div>
   );
