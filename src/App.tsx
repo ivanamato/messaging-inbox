@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { ConversationList, type ConversationListRef } from '@/components/conversation-list';
 import { MessageView } from '@/components/message-view';
 import { InstanceSelector } from '@/components/instance-selector';
@@ -6,6 +6,9 @@ import { ConnectionStatus } from '@/components/connection-status';
 import { DebugPanel } from '@/components/debug-panel/debug-panel';
 import { useDeviceContext } from '@/lib/provider-context';
 import { useAppState } from '@/use-cases/use-app-state';
+import { useTabTitle } from '@/hooks/use-tab-title';
+import { useSoundNotifications } from '@/hooks/use-sound-notifications';
+import { useBrowserNotifications } from '@/hooks/use-browser-notifications';
 import type { ChatActionsResolver, ChatTagsResolver, BulkChatTagsResolver, PrebuiltMessage } from '@/lib/providers/types';
 import type { RefObject } from 'react';
 
@@ -22,6 +25,30 @@ export function App({ conversationListRef: externalRef, chatActions, chatTags, c
   const prebuiltMessages: PrebuiltMessage[] | undefined = selectedDevice?.prebuiltMessages;
   const internalRef = useRef<ConversationListRef>(null);
   const conversationListRef = externalRef || internalRef;
+
+  // Notification state
+  const [totalUnread, setTotalUnread] = useState(0);
+  const { isMuted, toggleMute } = useSoundNotifications();
+  const { permission, isEnabled: notificationsEnabled, toggleEnabled: toggleNotifications } = useBrowserNotifications();
+
+  // Update total unread count from conversation list
+  useEffect(() => {
+    const updateUnread = () => {
+      const count = conversationListRef.current?.getTotalUnread() ?? 0;
+      setTotalUnread(count);
+    };
+    // Initial update after a short delay to let conversations load
+    const initialTimer = setTimeout(updateUnread, 500);
+    // Then update periodically
+    const interval = setInterval(updateUnread, 5000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [conversationListRef]);
+
+  // Tab title with unread count
+  useTabTitle(totalUnread);
 
   const {
     selectedConversation,
@@ -73,6 +100,11 @@ export function App({ conversationListRef: externalRef, chatActions, chatTags, c
           chatActions={chatActions}
           chatTags={chatTags}
           chatTagsBulk={chatTagsBulk}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+          notificationsEnabled={notificationsEnabled}
+          notificationPermission={permission}
+          onToggleNotifications={toggleNotifications}
         />
         <MessageView
           conversationId={selectedConversation?.id}

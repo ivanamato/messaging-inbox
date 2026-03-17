@@ -14,6 +14,7 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
 
   private static readonly MAX_RECONNECT_DELAY = 30000;
   private static readonly BASE_RECONNECT_DELAY = 1000;
+  private static readonly MAX_RECONNECT_ATTEMPTS = 50;
 
   constructor(
     private readonly wsUrl: string,
@@ -22,9 +23,19 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
     private readonly deviceId: string,
   ) {}
 
+  private log(level: 'debug' | 'info' | 'warn' | 'error', msg: string, data?: Record<string, unknown>): void {
+    const prefix = `[WS:${this.deviceId}]`;
+    const extra = data ? ' ' + JSON.stringify(data) : '';
+    if (level === 'error') console.error(`${prefix} ${msg}${extra}`);
+    else if (level === 'warn') console.warn(`${prefix} ${msg}${extra}`);
+    else console.log(`${prefix} ${msg}${extra}`);
+  }
+
   private setState(state: RealtimeConnectionState): void {
     if (this.state === state) return;
+    const prev = this.state;
     this.state = state;
+    this.log('info', `state: ${prev} → ${state}`);
     for (const handler of this.stateHandlers) {
       try { handler(state); } catch { /* ignore */ }
     }
@@ -47,6 +58,8 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
     if (this.ws) return;
     this.intentionalClose = false;
     this.hasConnected = false;
+    this.reconnectAttempts = 0;
+    this.log('info', 'connect() called');
     this.doConnect();
   }
 
@@ -54,9 +67,18 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
     this.setState('connecting');
 
     const url = this.resolveUrl();
-    this.ws = new WebSocket(url);
+    this.log('info', `opening WebSocket`, { url: url.replace(/token=[^&]+/, 'token=***') });
+
+    try {
+      this.ws = new WebSocket(url);
+    } catch (err) {
+      this.log('error', `WebSocket constructor failed`, { error: String(err) });
+      this.scheduleReconnect();
+      return;
+    }
 
     this.ws.onopen = () => {
+      this.log('info', `connected (attempt ${this.reconnectAttempts})`);
       this.reconnectAttempts = 0;
       this.hasConnected = true;
       this.setState('connected');
@@ -152,31 +174,36 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
     };
 
     this.ws.onclose = (ev) => {
+      this.log('warn', `closed`, { code: ev.code, reason: ev.reason || '(none)', wasClean: ev.wasClean, hadConnected: this.hasConnected });
       this.ws = null;
+
       if (this.intentionalClose) {
         this.setState('disconnected');
         return;
       }
+
       this.emitEvent({
         type: 'connection.changed',
         deviceId: this.deviceId,
         channelId: this.channelId,
         payload: { state: 'close' },
       });
-      if (!this.hasConnected) {
-        // Never connected — fail definitively
-        const errorMsg = ev.reason || `WebSocket connection failed (code ${ev.code})`;
+
+      // Always attempt reconnect (whether first connect failed or later disconnect)
+      if (this.reconnectAttempts < GenericServerRealtimeConnection.MAX_RECONNECT_ATTEMPTS) {
+        this.setState('reconnecting');
+        this.scheduleReconnect();
+      } else {
+        this.log('error', `max reconnect attempts (${GenericServerRealtimeConnection.MAX_RECONNECT_ATTEMPTS}) reached, giving up`);
         this.setState('disconnected');
         for (const handler of this.errorHandlers) {
-          try { handler(errorMsg); } catch { /* ignore */ }
+          try { handler(`Max reconnect attempts reached`); } catch { /* ignore */ }
         }
-        return;
       }
-      this.setState('reconnecting');
-      this.scheduleReconnect();
     };
 
-    this.ws.onerror = () => {
+    this.ws.onerror = (ev) => {
+      this.log('error', `error event fired`, { readyState: this.ws?.readyState });
       // onclose will fire after onerror
     };
   }
@@ -188,6 +215,7 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
       GenericServerRealtimeConnection.MAX_RECONNECT_DELAY,
     );
     this.reconnectAttempts++;
+    this.log('info', `reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (!this.intentionalClose) this.doConnect();
@@ -199,6 +227,7 @@ export class GenericServerRealtimeConnection implements RealtimeConnection {
   }
 
   disconnect(): void {
+    this.log('info', 'disconnect() called');
     this.intentionalClose = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

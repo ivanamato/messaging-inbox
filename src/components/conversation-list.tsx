@@ -1,4 +1,4 @@
-import { useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { format, isValid, isToday, isYesterday } from 'date-fns';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { RefreshCw, Search } from 'lucide-react';
@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { SoundToggle, NotificationToggle } from '@/components/notification-toggles';
 import { useDeviceContext } from '@/lib/provider-context';
 import { useTranslations } from '@/lib/i18n';
 import { sanitizeUrl } from '@/lib/url-utils';
@@ -39,6 +40,12 @@ type Props = {
   chatActions?: ChatActionsResolver;
   chatTags?: ChatTagsResolver;
   chatTagsBulk?: BulkChatTagsResolver;
+  // Notification controls
+  isMuted?: boolean;
+  onToggleMute?: () => void;
+  notificationsEnabled?: boolean;
+  notificationPermission?: NotificationPermission;
+  onToggleNotifications?: () => void;
 };
 
 export type ConversationListRef = {
@@ -46,10 +53,11 @@ export type ConversationListRef = {
   selectByPhoneNumber: (phoneNumber: string, deviceId?: string) => Promise<void>;
   select: (conversation: Conversation) => void;
   openChat: (phoneNumber: string, deviceId?: string) => Promise<void>;
+  getTotalUnread: () => number;
 };
 
 export const ConversationList = forwardRef<ConversationListRef, Props>(
-  ({ onSelectConversation, selectedConversationId, isHidden = false, instance, chatActions, chatTags, chatTagsBulk }, ref) => {
+  ({ onSelectConversation, selectedConversationId, isHidden = false, instance, chatActions, chatTags, chatTagsBulk, isMuted = false, onToggleMute, notificationsEnabled = false, notificationPermission = 'default', onToggleNotifications }, ref) => {
   const { viewMode, devices, selectedDevice, getProviderForDevice } = useDeviceContext();
   const t = useTranslations();
   const [searchFocused, setSearchFocused] = useState(false);
@@ -73,6 +81,11 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   } = useChatList({ instance, chatTags, chatTagsBulk });
 
   const handleRefresh = () => { refresh(); };
+
+  // Calculate total unread count
+  const totalUnread = useMemo(() => {
+    return conversations.reduce((sum, conv) => sum + (conv.unreadCount ?? 0), 0);
+  }, [conversations]);
 
   // Merge device-level capability overrides onto provider capabilities
   const getEffectiveCaps = (device: DeviceConfig) => {
@@ -101,6 +114,7 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
   useImperativeHandle(ref, () => ({
     refresh,
     select: (conversation: Conversation) => { onSelectConversation(conversation); },
+    getTotalUnread: () => totalUnread,
     selectByPhoneNumber: async (phoneNumber: string, deviceId?: string) => {
       const match = (c: Conversation) =>
         c.phoneNumber === phoneNumber && (!deviceId || c.deviceId === deviceId);
@@ -201,15 +215,23 @@ export const ConversationList = forwardRef<ConversationListRef, Props>(
               />
             )}
           </div>
-          <Button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            variant="ghost"
-            size="icon"
-            className="wa:text-[#54656f] hover:wa:bg-transparent wa:h-10 wa:w-10"
-          >
-            <RefreshCw className={cn("wa:h-[18px] wa:w-[18px]", refreshing && "wa:animate-spin")} />
-          </Button>
+          <div className="wa:flex wa:items-center wa:gap-1">
+            <SoundToggle isMuted={isMuted} onToggle={onToggleMute || (() => {})} />
+            <NotificationToggle
+              isEnabled={notificationsEnabled}
+              permission={notificationPermission}
+              onToggle={onToggleNotifications || (() => {})}
+            />
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              variant="ghost"
+              size="icon"
+              className="wa:text-[#54656f] hover:wa:bg-transparent wa:h-10 wa:w-10"
+            >
+              <RefreshCw className={cn("wa:h-[18px] wa:w-[18px]", refreshing && "wa:animate-spin")} />
+            </Button>
+          </div>
         </div>
 
         {/* WhatsApp-style search bar */}

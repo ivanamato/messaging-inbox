@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useProvider, useDeviceContext } from '@/lib/provider-context';
 import { useAutoPolling } from '@/hooks/use-auto-polling';
 import { useRealtimeEvents } from '@/hooks/use-realtime-events';
@@ -99,6 +99,7 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
     }
     try {
       const mapped = await doFetch();
+      console.log(`[ChatList] fetchConversations: replacing list with ${mapped.length} chats (source: poll/initial)`);
       setConversations(mapped);
     } catch (error) {
       if (process.env.NODE_ENV !== 'production') {
@@ -125,32 +126,67 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
     }
   }, [viewMode, instance, doFetch]);
 
+  // Clear stale data and re-fetch on device switch
+  const prevDeviceRef = useRef(selectedDevice?.id);
+  useEffect(() => {
+    if (prevDeviceRef.current !== selectedDevice?.id) {
+      prevDeviceRef.current = selectedDevice?.id;
+      setConversations([]);
+      setLoading(true);
+      fetchConversations();
+    }
+  }, [selectedDevice?.id, fetchConversations]);
+
   // Determine if all active devices are WS-connected (so we can skip polling)
   const wsConnectedForActive = useMemo(() => {
+    const isWsActive = (deviceId: string) => {
+      const state = realtimeStates[deviceId];
+      return state === 'connected' || state === 'reconnecting';
+    };
     if (viewMode === 'all') {
-      return devices.every(d => realtimeStates[d.id] === 'connected');
+      return devices.every(d => isWsActive(d.id));
     }
     if (selectedDevice) {
-      return realtimeStates[selectedDevice.id] === 'connected';
+      return isWsActive(selectedDevice.id);
     }
     return false;
   }, [viewMode, devices, selectedDevice, realtimeStates]);
 
+  const pollingEnabled = (viewMode === 'all' || !!instance) && !wsConnectedForActive;
+
   const { isPolling } = useAutoPolling({
     interval: 10000,
-    enabled: (viewMode === 'all' || !!instance) && !wsConnectedForActive,
+    enabled: pollingEnabled,
     onPoll: fetchConversations,
+    fireImmediately: true,
   });
 
+  // Build device filter: in single-device view, only process events from the selected device
+  const realtimeFilter = useMemo(() => {
+    const filter: { type: string[]; deviceId?: string } = {
+      type: ['chat.updated', 'chat.new', 'message.new'],
+    };
+    if (viewMode === 'single' && selectedDevice) {
+      filter.deviceId = selectedDevice.id;
+    }
+    return filter;
+  }, [viewMode, selectedDevice]);
+
   // Realtime: subscribe to chat events and do an incremental merge
-  useRealtimeEvents(eventBus, { type: ['chat.updated', 'chat.new', 'message.new'] }, useCallback((event) => {
+  useRealtimeEvents(eventBus, realtimeFilter, useCallback((event) => {
     if (event.type === 'message.new') {
       const { chatId, message } = event.payload;
+      console.log(`[ChatList] WS message.new: chatId=${chatId} direction=${message.direction} content=${(message.content || '').slice(0, 30)}`);
       setConversations(prev => {
         const idx = prev.findIndex(c =>
           c.id === chatId || c.phoneNumber === message.phoneNumber,
         );
-        if (idx < 0) return prev; // Unknown chat — full refresh will pick it up
+        if (idx < 0) {
+          console.log(`[ChatList] WS message.new: chatId=${chatId} NOT FOUND in list (${prev.length} chats)`);
+          return prev;
+        }
+        console.log(`[ChatList] WS message.new: updating chat at idx=${idx} (id=${prev[idx].id})`);
+
         const updated = [...prev];
         const conv = { ...updated[idx] };
         conv.lastActiveAt = message.createdAt;
@@ -178,8 +214,12 @@ export function useChatList({ instance, chatTags, chatTagsBulk }: Props) {
       });
     } else if (event.type === 'chat.new') {
       const { chat } = event.payload;
+      console.log(`[ChatList] WS chat.new: id=${chat.id} name=${chat.contactName}`);
       setConversations(prev => {
-        if (prev.some(c => c.id === chat.id)) return prev;
+        if (prev.some(c => c.id === chat.id)) {
+          console.log(`[ChatList] WS chat.new: id=${chat.id} already exists, skipping`);
+          return prev;
+        }
         return [{
           id: chat.id,
           phoneNumber: chat.phoneNumber,
